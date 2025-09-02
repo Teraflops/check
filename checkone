@@ -3,8 +3,16 @@ import scala.util.{Try, Success, Failure}
 import scala.collection.mutable
 import java.io.PrintWriter
 import java.time.Instant
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
 
-object EnhancedConfigParserWithDefaults {
+// Couchbase imports (these would need to be added to build dependencies)
+// import com.couchbase.client.scala._
+// import com.couchbase.client.scala.json._
+// import com.couchbase.client.core.error.DocumentNotFoundException
+
+object EnhancedConfigParserWithCouchbase {
   
   // Define the keys to search for
   val jsonKeys = Array(
@@ -32,6 +40,69 @@ object EnhancedConfigParserWithDefaults {
     matchedKeys: Map[String, String]
   )
   
+  case class CouchbaseConfig(
+    connectionString: String,
+    username: String,
+    password: String,
+    bucketName: String = "RTCONFIG",
+    scopeName: String = "CITIDIRECT",
+    collectionName: String = "PIPELINES"
+  )
+  
+  // Mock Couchbase client interface (replace with actual Couchbase SDK)
+  trait CouchbaseClient {
+    def insert(key: String, document: String): Try[Unit]
+    def close(): Unit
+  }
+  
+  // Mock implementation for demonstration (replace with actual Couchbase client)
+  class MockCouchbaseClient(config: CouchbaseConfig) extends CouchbaseClient {
+    println(s"Mock Couchbase Client initialized:")
+    println(s"  Connection: ${config.connectionString}")
+    println(s"  Bucket: ${config.bucketName}")
+    println(s"  Scope: ${config.scopeName}")
+    println(s"  Collection: ${config.collectionName}")
+    
+    override def insert(key: String, document: String): Try[Unit] = {
+      Try {
+        println(s"Mock Insert - Key: $key")
+        println(s"Mock Insert - Document: ${document.take(100)}...")
+        // Simulate successful insert
+        Thread.sleep(100) // Simulate network latency
+      }
+    }
+    
+    override def close(): Unit = {
+      println("Mock Couchbase Client closed")
+    }
+  }
+  
+  // Actual Couchbase client implementation (uncomment when Couchbase SDK is available)
+  /*
+  class ActualCouchbaseClient(config: CouchbaseConfig) extends CouchbaseClient {
+    private val cluster = Cluster.connect(config.connectionString, config.username, config.password)
+    private val bucket = cluster.bucket(config.bucketName)
+    private val scope = bucket.scope(config.scopeName)
+    private val collection = scope.collection(config.collectionName)
+    
+    override def insert(key: String, document: String): Try[Unit] = {
+      Try {
+        val jsonObject = JsonObject.fromJson(document)
+        val result = Await.result(collection.insert(key, jsonObject), 10.seconds)
+        println(s"Successfully inserted document with key: $key")
+      }.recoverWith {
+        case ex: Exception =>
+          println(s"Failed to insert document with key $key: ${ex.getMessage}")
+          Failure(ex)
+      }
+    }
+    
+    override def close(): Unit = {
+      cluster.disconnect()
+    }
+  }
+  */
+  
   def getCurrentEpochMillis(): String = {
     Instant.now().toEpochMilli.toString
   }
@@ -45,6 +116,11 @@ object EnhancedConfigParserWithDefaults {
       case "Target_config.uuid" => s"${pipelineName}+Couchbase+${pipelineName}+Iceberg"
       case _ => "NOT_FOUND"
     }
+  }
+  
+  def shouldUseDefaultValue(key: String): Boolean = {
+    // These keys should always use default values when not found exactly
+    Array("Target_config.uuid", "LstUpdDt", "CrtDt", "CrtUsr", "UpdUsr").contains(key)
   }
   
   def parseConfigFile(filePath: String): Map[String, String] = {
@@ -121,11 +197,6 @@ object EnhancedConfigParserWithDefaults {
       "default."
     )
     globalPatterns.exists(pattern => key.toLowerCase.startsWith(pattern.toLowerCase))
-  }
-  
-  def shouldUseDefaultValue(key: String): Boolean = {
-    // These keys should always use default values when not found exactly
-    Array("Target_config.uuid", "LstUpdDt", "CrtDt", "CrtUsr", "UpdUsr").contains(key)
   }
   
   def findMatchingKeys(configMap: Map[String, String], targetKeys: Array[String], pipelineName: String): Map[String, String] = {
@@ -294,10 +365,19 @@ object EnhancedConfigParserWithDefaults {
     None
   }
   
+  def generateCouchbaseKey(matchedKeys: Map[String, String]): String = {
+    val targetConfigUuid = matchedKeys.getOrElse("Target_config.uuid", "")
+    val groupsUuid = matchedKeys.getOrElse("groups.uuid", "")
+    val sourceConfigUuid = matchedKeys.getOrElse("source_config.uuid", "")
+    
+    s"${targetConfigUuid}_${groupsUuid}_${sourceConfigUuid}"
+  }
+  
   def generateJson(matchedKeys: Map[String, String], pipelineName: String): String = {
     val jsonBuilder = new StringBuilder
     jsonBuilder.append("{\n")
     jsonBuilder.append(s"""  "pipeline_name": "$pipelineName",\n""")
+    jsonBuilder.append(s"""  "generated_at_epoch": "${getCurrentEpochMillis()}",\n""")
     
     val entries = matchedKeys.toSeq.zipWithIndex
     entries.foreach { case ((key, value), index) =>
@@ -312,6 +392,25 @@ object EnhancedConfigParserWithDefaults {
     
     jsonBuilder.append("}")
     jsonBuilder.toString()
+  }
+  
+  def insertToCouchbase(pipelineConfig: PipelineConfig, couchbaseClient: CouchbaseClient): Try[String] = {
+    val jsonDocument = generateJson(pipelineConfig.matchedKeys, pipelineConfig.name)
+    val couchbaseKey = generateCouchbaseKey(pipelineConfig.matchedKeys)
+    
+    println(s"\n=== Inserting to Couchbase ===")
+    println(s"Pipeline: ${pipelineConfig.name}")
+    println(s"Generated Key: $couchbaseKey")
+    println(s"Document size: ${jsonDocument.length} characters")
+    
+    couchbaseClient.insert(couchbaseKey, jsonDocument) match {
+      case Success(_) =>
+        println(s"✅ Successfully inserted pipeline '${pipelineConfig.name}' to Couchbase")
+        Success(couchbaseKey)
+      case Failure(exception) =>
+        println(s"❌ Failed to insert pipeline '${pipelineConfig.name}' to Couchbase: ${exception.getMessage}")
+        Failure(exception)
+    }
   }
   
   def processPipelines(configMap: Map[String, String]): List[PipelineConfig] = {
@@ -333,7 +432,7 @@ object EnhancedConfigParserWithDefaults {
   def saveJsonFiles(pipelineConfigs: List[PipelineConfig]): Unit = {
     pipelineConfigs.foreach { pipelineConfig =>
       val jsonOutput = generateJson(pipelineConfig.matchedKeys, pipelineConfig.name)
-      val fileName = s"${pipelineConfig.name.toLowerCase}_config_with_defaults.json"
+      val fileName = s"${pipelineConfig.name.toLowerCase}_config_couchbase.json"
       
       Try {
         val writer = new PrintWriter(fileName)
@@ -354,12 +453,23 @@ object EnhancedConfigParserWithDefaults {
     val jsonBuilder = new StringBuilder
     jsonBuilder.append("{\n")
     jsonBuilder.append(s"""  "total_pipelines": ${pipelineConfigs.length},\n""")
-    jsonBuilder.append(s"""  "generated_at_epoch": ${getCurrentEpochMillis()},\n""")
+    jsonBuilder.append(s"""  "generated_at_epoch": "${getCurrentEpochMillis()}",\n""")
+    jsonBuilder.append(s"""  "couchbase_config": {\n""")
+    jsonBuilder.append(s"""    "bucket": "RTCONFIG",\n""")
+    jsonBuilder.append(s"""    "scope": "CITIDIRECT",\n""")
+    jsonBuilder.append(s"""    "collection": "PIPELINES"\n""")
+    jsonBuilder.append(s"""  },\n""")
     jsonBuilder.append("""  "pipelines": [""").append("\n")
     
     pipelineConfigs.zipWithIndex.foreach { case (pipelineConfig, index) =>
       val pipelineJson = generateJson(pipelineConfig.matchedKeys, pipelineConfig.name)
-      jsonBuilder.append("    ").append(pipelineJson.replace("\n", "\n    "))
+      val couchbaseKey = generateCouchbaseKey(pipelineConfig.matchedKeys)
+      
+      jsonBuilder.append("    {\n")
+      jsonBuilder.append(s"""      "couchbase_key": "$couchbaseKey",\n""")
+      jsonBuilder.append(s"""      "document": """).append(pipelineJson.replace("\n", "\\n").replace("\"", "\\\"")).append("\n")
+      jsonBuilder.append("    }")
+      
       if (index < pipelineConfigs.length - 1) {
         jsonBuilder.append(",")
       }
@@ -371,15 +481,26 @@ object EnhancedConfigParserWithDefaults {
     jsonBuilder.toString()
   }
   
-  def printSummary(pipelineConfigs: List[PipelineConfig]): Unit = {
+  def printSummary(pipelineConfigs: List[PipelineConfig], couchbaseResults: List[Try[String]]): Unit = {
     println(s"\n=== OVERALL SUMMARY ===")
     println(s"Total pipelines processed: ${pipelineConfigs.length}")
     println(s"Target keys searched per pipeline: ${jsonKeys.length}")
     println(s"Current epoch time: ${getCurrentEpochMillis()}")
     
-    pipelineConfigs.foreach { pipelineConfig =>
+    val successfulInserts = couchbaseResults.count(_.isSuccess)
+    val failedInserts = couchbaseResults.count(_.isFailure)
+    
+    println(s"\n=== Couchbase Insert Summary ===")
+    println(s"Successful inserts: $successfulInserts")
+    println(s"Failed inserts: $failedInserts")
+    println(s"Success rate: ${if (pipelineConfigs.nonEmpty) (successfulInserts.toDouble / pipelineConfigs.length * 100).round else 0}%")
+    
+    pipelineConfigs.zip(couchbaseResults).foreach { case (pipelineConfig, result) =>
       val foundCount = pipelineConfig.matchedKeys.count(_._2 != "NOT_FOUND")
       val notFoundCount = pipelineConfig.matchedKeys.count(_._2 == "NOT_FOUND")
+      val couchbaseKey = generateCouchbaseKey(pipelineConfig.matchedKeys)
+      
+      // Count default values applied
       val defaultCount = pipelineConfig.matchedKeys.count { case (key, value) =>
         value != "NOT_FOUND" && (
           key == "LstUpdDt" || key == "CrtDt" || key == "CrtUsr" || key == "UpdUsr" || key == "Target_config.uuid"
@@ -393,6 +514,8 @@ object EnhancedConfigParserWithDefaults {
       println(s"  - Keys with defaults: $defaultCount")
       println(s"  - Keys not found: $notFoundCount")
       println(s"  - Success rate: ${(foundCount.toDouble / jsonKeys.length * 100).round}%")
+      println(s"  - Couchbase key: $couchbaseKey")
+      println(s"  - Couchbase insert: ${if (result.isSuccess) "✅ SUCCESS" else "❌ FAILED"}")
       
       if (notFoundCount > 0) {
         println(s"  - Missing keys: ${pipelineConfig.matchedKeys.filter(_._2 == "NOT_FOUND").keys.mkString(", ")}")
@@ -417,10 +540,18 @@ object EnhancedConfigParserWithDefaults {
   def main(args: Array[String]): Unit = {
     val configFilePath = if (args.nonEmpty) args(0) else "/home/ubuntu/upload/configload.txt"
     
-    println("=== Enhanced Config Parser with Defaults Started ===")
+    // Couchbase configuration (can be passed as command line arguments or environment variables)
+    val couchbaseConfig = CouchbaseConfig(
+      connectionString = sys.env.getOrElse("COUCHBASE_CONNECTION_STRING", "couchbase://localhost"),
+      username = sys.env.getOrElse("COUCHBASE_USERNAME", "Administrator"),
+      password = sys.env.getOrElse("COUCHBASE_PASSWORD", "password")
+    )
+    
+    println("=== Enhanced Config Parser with Couchbase Integration Started ===")
     println(s"Parsing config file: $configFilePath")
     println(s"Looking for ${jsonKeys.length} keys per pipeline...")
     println(s"Current epoch time: ${getCurrentEpochMillis()}")
+    println(s"Couchbase target: ${couchbaseConfig.bucketName}.${couchbaseConfig.scopeName}.${couchbaseConfig.collectionName}")
     println()
     
     // Parse the config file
@@ -438,23 +569,39 @@ object EnhancedConfigParserWithDefaults {
         // Save individual JSON files for each pipeline
         saveJsonFiles(pipelineConfigs)
         
-        // Generate and save combined JSON
-        val combinedJson = generateCombinedJson(pipelineConfigs)
-        Try {
-          val writer = new PrintWriter("all_pipelines_config_with_defaults.json")
-          try {
-            writer.write(combinedJson)
-            println(s"\nCombined JSON output saved to: all_pipelines_config_with_defaults.json")
-          } finally {
-            writer.close()
-          }
-        } match {
-          case Success(_) => // Success message already printed
-          case Failure(exception) => println(s"Error saving combined file: ${exception.getMessage}")
-        }
+        // Initialize Couchbase client
+        val couchbaseClient: CouchbaseClient = new MockCouchbaseClient(couchbaseConfig)
+        // For actual Couchbase integration, use:
+        // val couchbaseClient: CouchbaseClient = new ActualCouchbaseClient(couchbaseConfig)
         
-        // Print summary
-        printSummary(pipelineConfigs)
+        try {
+          // Insert each pipeline configuration to Couchbase
+          val couchbaseResults = pipelineConfigs.map { pipelineConfig =>
+            insertToCouchbase(pipelineConfig, couchbaseClient)
+          }
+          
+          // Generate and save combined JSON with Couchbase metadata
+          val combinedJson = generateCombinedJson(pipelineConfigs)
+          Try {
+            val writer = new PrintWriter("all_pipelines_config_couchbase.json")
+            try {
+              writer.write(combinedJson)
+              println(s"\nCombined JSON output with Couchbase metadata saved to: all_pipelines_config_couchbase.json")
+            } finally {
+              writer.close()
+            }
+          } match {
+            case Success(_) => // Success message already printed
+            case Failure(exception) => println(s"Error saving combined file: ${exception.getMessage}")
+          }
+          
+          // Print summary
+          printSummary(pipelineConfigs, couchbaseResults)
+          
+        } finally {
+          // Close Couchbase client
+          couchbaseClient.close()
+        }
         
       } else {
         println("No pipelines found in configuration")
@@ -464,7 +611,7 @@ object EnhancedConfigParserWithDefaults {
       println("Failed to parse config file or file is empty")
     }
     
-    println("\n=== Enhanced Config Parser with Defaults Completed ===")
+    println("\n=== Enhanced Config Parser with Couchbase Integration Completed ===")
   }
 }
 
