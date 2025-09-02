@@ -1,0 +1,220 @@
+import scala.io.Source
+import scala.util.{Try, Success, Failure}
+import scala.collection.mutable
+
+object ConfigParser {
+  
+  // Define the keys to search for
+  val jsonKeys = Array(
+    "Target_config.uuid",
+    "consumer_offset_start",
+    "Transformation.id",
+    "Checkpoint_base_path",
+    "source_config.uuid",
+    "print.level",
+    "Consumer_group",
+    "DQ",
+    "Pipeline",
+    "UpdUsr",
+    "CrtDt",
+    "groups.uuid",
+    "validation.updflag",
+    "LstUpdDt",
+    "validation.updflag.mergeorderpartition",
+    "CrtUsr"
+  )
+  
+  def parseConfigFile(filePath: String): Map[String, String] = {
+    val configMap = mutable.Map[String, String]()
+    
+    Try {
+      val source = Source.fromFile(filePath)
+      try {
+        source.getLines().foreach { line =>
+          val trimmedLine = line.trim
+          if (trimmedLine.nonEmpty && !trimmedLine.startsWith("#")) {
+            val parts = trimmedLine.split("=", 2)
+            if (parts.length == 2) {
+              val key = parts(0).trim
+              val value = parts(1).trim
+              configMap(key) = value
+            }
+          }
+        }
+      } finally {
+        source.close()
+      }
+    } match {
+      case Success(_) => println(s"Successfully parsed config file: $filePath")
+      case Failure(exception) => 
+        println(s"Error reading file: ${exception.getMessage}")
+        return Map.empty
+    }
+    
+    configMap.toMap
+  }
+  
+  def findMatchingKeys(configMap: Map[String, String], targetKeys: Array[String]): Map[String, String] = {
+    val result = mutable.Map[String, String]()
+    
+    targetKeys.foreach { targetKey =>
+      // First try exact match
+      configMap.get(targetKey) match {
+        case Some(value) => 
+          result(targetKey) = value
+          println(s"Exact match found: $targetKey = $value")
+        case None =>
+          // Try partial matching - look for keys that contain the target key
+          val partialMatches = configMap.filter { case (configKey, _) =>
+            configKey.toLowerCase.contains(targetKey.toLowerCase) ||
+            targetKey.toLowerCase.contains(configKey.toLowerCase.split("\\.").last)
+          }
+          
+          if (partialMatches.nonEmpty) {
+            // Take the first match or the most relevant one
+            val bestMatch = partialMatches.head
+            result(targetKey) = bestMatch._2
+            println(s"Partial match found: $targetKey -> ${bestMatch._1} = ${bestMatch._2}")
+          } else {
+            // Try mapping based on semantic similarity
+            val semanticMatch = findSemanticMatch(targetKey, configMap)
+            semanticMatch match {
+              case Some((matchedKey, value)) =>
+                result(targetKey) = value
+                println(s"Semantic match found: $targetKey -> $matchedKey = $value")
+              case None =>
+                result(targetKey) = "NOT_FOUND"
+                println(s"No match found for: $targetKey")
+            }
+          }
+      }
+    }
+    
+    result.toMap
+  }
+  
+  def findSemanticMatch(targetKey: String, configMap: Map[String, String]): Option[(String, String)] = {
+    val lowerTargetKey = targetKey.toLowerCase
+    
+    // Define semantic mappings
+    val semanticMappings = Map(
+      "consumer_offset_start" -> Array("consumer.offset.start", "offset.start", "consumer_offset"),
+      "checkpoint_base_path" -> Array("checkpoint_base_path", "checkpoint.base.path", "checkpoint"),
+      "print.level" -> Array("print.level", "log.level", "level"),
+      "consumer_group" -> Array("consumer.group", "consumer_group", "group"),
+      "pipeline" -> Array("pipelines", "pipeline", "id"),
+      "transformation.id" -> Array("transformation", "parser.id", "additional.transformation")
+    )
+    
+    // Check semantic mappings
+    semanticMappings.get(lowerTargetKey) match {
+      case Some(possibleKeys) =>
+        possibleKeys.foreach { possibleKey =>
+          configMap.find { case (configKey, _) =>
+            configKey.toLowerCase.contains(possibleKey.toLowerCase)
+          } match {
+            case Some((foundKey, value)) => return Some((foundKey, value))
+            case None => // Continue searching
+          }
+        }
+      case None => // No semantic mapping defined
+    }
+    
+    // Fallback: try to match by the last part of the key
+    val keyParts = lowerTargetKey.split("\\.")
+    if (keyParts.nonEmpty) {
+      val lastPart = keyParts.last
+      configMap.find { case (configKey, _) =>
+        configKey.toLowerCase.split("\\.").last == lastPart ||
+        configKey.toLowerCase.contains(lastPart)
+      }
+    } else {
+      None
+    }
+  }
+  
+  def generateJson(matchedKeys: Map[String, String]): String = {
+    val jsonBuilder = new StringBuilder
+    jsonBuilder.append("{\n")
+    
+    val entries = matchedKeys.toSeq.zipWithIndex
+    entries.foreach { case ((key, value), index) =>
+      val escapedKey = key.replace("\"", "\\\"")
+      val escapedValue = value.replace("\"", "\\\"").replace("\\", "\\\\")
+      jsonBuilder.append(s"""  "$escapedKey": "$escapedValue"""")
+      if (index < entries.length - 1) {
+        jsonBuilder.append(",")
+      }
+      jsonBuilder.append("\n")
+    }
+    
+    jsonBuilder.append("}")
+    jsonBuilder.toString()
+  }
+  
+  def main(args: Array[String]): Unit = {
+    val configFilePath = if (args.nonEmpty) args(0) else "configload.txt"
+    
+    println("=== Config Parser Started ===")
+    println(s"Parsing config file: $configFilePath")
+    println(s"Looking for ${jsonKeys.length} keys...")
+    println()
+    
+    // Parse the config file
+    val configMap = parseConfigFile(configFilePath)
+    
+    if (configMap.nonEmpty) {
+      println(s"Loaded ${configMap.size} configuration entries")
+      println()
+      
+      // Find matching keys
+      val matchedKeys = findMatchingKeys(configMap, jsonKeys)
+      
+      println()
+      println("=== Results ===")
+      
+      // Generate JSON
+      val jsonOutput = generateJson(matchedKeys)
+      
+      println("Generated JSON:")
+      println(jsonOutput)
+      
+      // Save JSON to file
+      val jsonFilePath = "config_output.json"
+      Try {
+        val writer = new java.io.PrintWriter(jsonFilePath)
+        try {
+          writer.write(jsonOutput)
+          println(s"\nJSON output saved to: $jsonFilePath")
+        } finally {
+          writer.close()
+        }
+      } match {
+        case Success(_) => println("File saved successfully")
+        case Failure(exception) => println(s"Error saving file: ${exception.getMessage}")
+      }
+      
+      // Print summary
+      val foundCount = matchedKeys.count(_._2 != "NOT_FOUND")
+      val notFoundCount = matchedKeys.count(_._2 == "NOT_FOUND")
+      
+      println(s"\n=== Summary ===")
+      println(s"Total keys searched: ${jsonKeys.length}")
+      println(s"Keys found: $foundCount")
+      println(s"Keys not found: $notFoundCount")
+      
+      if (notFoundCount > 0) {
+        println("\nKeys not found:")
+        matchedKeys.filter(_._2 == "NOT_FOUND").foreach { case (key, _) =>
+          println(s"  - $key")
+        }
+      }
+      
+    } else {
+      println("Failed to parse config file or file is empty")
+    }
+    
+    println("\n=== Config Parser Completed ===")
+  }
+}
+
