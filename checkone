@@ -2,8 +2,9 @@ import scala.io.Source
 import scala.util.{Try, Success, Failure}
 import scala.collection.mutable
 import java.io.PrintWriter
+import java.time.Instant
 
-object EnhancedConfigParser {
+object EnhancedConfigParserWithDefaults {
   
   // Define the keys to search for
   val jsonKeys = Array(
@@ -30,6 +31,21 @@ object EnhancedConfigParser {
     configMap: Map[String, String],
     matchedKeys: Map[String, String]
   )
+  
+  def getCurrentEpochMillis(): String = {
+    Instant.now().toEpochMilli.toString
+  }
+  
+  def generateDefaultValue(key: String, pipelineName: String): String = {
+    key match {
+      case "LstUpdDt" => getCurrentEpochMillis()
+      case "CrtDt" => getCurrentEpochMillis()
+      case "CrtUsr" => "Admin"
+      case "UpdUsr" => "Admin"
+      case "Target_config.uuid" => s"${pipelineName}+Couchbase+${pipelineName}+Iceberg"
+      case _ => "NOT_FOUND"
+    }
+  }
   
   def parseConfigFile(filePath: String): Map[String, String] = {
     val configMap = mutable.Map[String, String]()
@@ -107,42 +123,77 @@ object EnhancedConfigParser {
     globalPatterns.exists(pattern => key.toLowerCase.startsWith(pattern.toLowerCase))
   }
   
+  def shouldUseDefaultValue(key: String): Boolean = {
+    // These keys should always use default values when not found exactly
+    Array("Target_config.uuid", "LstUpdDt", "CrtDt", "CrtUsr", "UpdUsr").contains(key)
+  }
+  
   def findMatchingKeys(configMap: Map[String, String], targetKeys: Array[String], pipelineName: String): Map[String, String] = {
     val result = mutable.Map[String, String]()
     
     targetKeys.foreach { targetKey =>
-      // First try exact match
-      configMap.get(targetKey) match {
-        case Some(value) => 
-          result(targetKey) = value
-          println(s"[$pipelineName] Exact match found: $targetKey = $value")
-        case None =>
-          // Try pipeline-specific match (pipeline.targetKey)
-          val pipelineSpecificKey = s"$pipelineName.$targetKey"
-          configMap.get(pipelineSpecificKey) match {
-            case Some(value) =>
-              result(targetKey) = value
-              println(s"[$pipelineName] Pipeline-specific match found: $targetKey -> $pipelineSpecificKey = $value")
-            case None =>
-              // Try partial matching within pipeline scope
-              val partialMatch = findPartialMatch(targetKey, configMap, pipelineName)
-              partialMatch match {
-                case Some((matchedKey, value)) =>
-                  result(targetKey) = value
-                  println(s"[$pipelineName] Partial match found: $targetKey -> $matchedKey = $value")
-                case None =>
-                  // Try semantic matching
-                  val semanticMatch = findSemanticMatch(targetKey, configMap, pipelineName)
-                  semanticMatch match {
-                    case Some((matchedKey, value)) =>
-                      result(targetKey) = value
-                      println(s"[$pipelineName] Semantic match found: $targetKey -> $matchedKey = $value")
-                    case None =>
-                      result(targetKey) = "NOT_FOUND"
-                      println(s"[$pipelineName] No match found for: $targetKey")
-                  }
-              }
-          }
+      // Check if this key should always use default values
+      if (shouldUseDefaultValue(targetKey)) {
+        // First try exact match
+        configMap.get(targetKey) match {
+          case Some(value) => 
+            result(targetKey) = value
+            println(s"[$pipelineName] Exact match found: $targetKey = $value")
+          case None =>
+            // Try pipeline-specific match (pipeline.targetKey)
+            val pipelineSpecificKey = s"$pipelineName.$targetKey"
+            configMap.get(pipelineSpecificKey) match {
+              case Some(value) =>
+                result(targetKey) = value
+                println(s"[$pipelineName] Pipeline-specific match found: $targetKey -> $pipelineSpecificKey = $value")
+              case None =>
+                // For these special keys, use default value instead of partial/semantic matching
+                val defaultValue = generateDefaultValue(targetKey, pipelineName)
+                result(targetKey) = defaultValue
+                println(s"[$pipelineName] Default value generated for: $targetKey = $defaultValue")
+            }
+        }
+      } else {
+        // Normal matching logic for other keys
+        // First try exact match
+        configMap.get(targetKey) match {
+          case Some(value) => 
+            result(targetKey) = value
+            println(s"[$pipelineName] Exact match found: $targetKey = $value")
+          case None =>
+            // Try pipeline-specific match (pipeline.targetKey)
+            val pipelineSpecificKey = s"$pipelineName.$targetKey"
+            configMap.get(pipelineSpecificKey) match {
+              case Some(value) =>
+                result(targetKey) = value
+                println(s"[$pipelineName] Pipeline-specific match found: $targetKey -> $pipelineSpecificKey = $value")
+              case None =>
+                // Try partial matching within pipeline scope
+                val partialMatch = findPartialMatch(targetKey, configMap, pipelineName)
+                partialMatch match {
+                  case Some((matchedKey, value)) =>
+                    result(targetKey) = value
+                    println(s"[$pipelineName] Partial match found: $targetKey -> $matchedKey = $value")
+                  case None =>
+                    // Try semantic matching
+                    val semanticMatch = findSemanticMatch(targetKey, configMap, pipelineName)
+                    semanticMatch match {
+                      case Some((matchedKey, value)) =>
+                        result(targetKey) = value
+                        println(s"[$pipelineName] Semantic match found: $targetKey -> $matchedKey = $value")
+                      case None =>
+                        // Generate default value if no match found
+                        val defaultValue = generateDefaultValue(targetKey, pipelineName)
+                        result(targetKey) = defaultValue
+                        if (defaultValue != "NOT_FOUND") {
+                          println(s"[$pipelineName] Default value generated for: $targetKey = $defaultValue")
+                        } else {
+                          println(s"[$pipelineName] No match found for: $targetKey")
+                        }
+                    }
+                }
+            }
+        }
       }
     }
     
@@ -198,7 +249,6 @@ object EnhancedConfigParser {
       "consumer_group" -> Array("consumer.group", "consumer_group", "group"),
       "pipeline" -> Array("pipelines", "pipeline", "id"),
       "transformation.id" -> Array("transformation", "parser.id", "additional.transformation", "staging.id"),
-      "target_config.uuid" -> Array("target.id", "target.uuid", "uuid"),
       "source_config.uuid" -> Array("source", "source.id", "source.uuid"),
       "dq" -> Array("validation", "dq", "data.quality"),
       "validation.updflag" -> Array("validation.flag", "validation", "updflag")
@@ -283,7 +333,7 @@ object EnhancedConfigParser {
   def saveJsonFiles(pipelineConfigs: List[PipelineConfig]): Unit = {
     pipelineConfigs.foreach { pipelineConfig =>
       val jsonOutput = generateJson(pipelineConfig.matchedKeys, pipelineConfig.name)
-      val fileName = s"${pipelineConfig.name.toLowerCase}_config.json"
+      val fileName = s"${pipelineConfig.name.toLowerCase}_config_with_defaults.json"
       
       Try {
         val writer = new PrintWriter(fileName)
@@ -304,6 +354,7 @@ object EnhancedConfigParser {
     val jsonBuilder = new StringBuilder
     jsonBuilder.append("{\n")
     jsonBuilder.append(s"""  "total_pipelines": ${pipelineConfigs.length},\n""")
+    jsonBuilder.append(s"""  "generated_at_epoch": ${getCurrentEpochMillis()},\n""")
     jsonBuilder.append("""  "pipelines": [""").append("\n")
     
     pipelineConfigs.zipWithIndex.foreach { case (pipelineConfig, index) =>
@@ -324,18 +375,41 @@ object EnhancedConfigParser {
     println(s"\n=== OVERALL SUMMARY ===")
     println(s"Total pipelines processed: ${pipelineConfigs.length}")
     println(s"Target keys searched per pipeline: ${jsonKeys.length}")
+    println(s"Current epoch time: ${getCurrentEpochMillis()}")
     
     pipelineConfigs.foreach { pipelineConfig =>
       val foundCount = pipelineConfig.matchedKeys.count(_._2 != "NOT_FOUND")
       val notFoundCount = pipelineConfig.matchedKeys.count(_._2 == "NOT_FOUND")
+      val defaultCount = pipelineConfig.matchedKeys.count { case (key, value) =>
+        value != "NOT_FOUND" && (
+          key == "LstUpdDt" || key == "CrtDt" || key == "CrtUsr" || key == "UpdUsr" || key == "Target_config.uuid"
+        ) && (
+          value == "Admin" || value.matches("\\d+") || value.contains("+Couchbase+")
+        )
+      }
       
       println(s"\nPipeline: ${pipelineConfig.name}")
       println(s"  - Keys found: $foundCount/${jsonKeys.length}")
+      println(s"  - Keys with defaults: $defaultCount")
       println(s"  - Keys not found: $notFoundCount")
       println(s"  - Success rate: ${(foundCount.toDouble / jsonKeys.length * 100).round}%")
       
       if (notFoundCount > 0) {
         println(s"  - Missing keys: ${pipelineConfig.matchedKeys.filter(_._2 == "NOT_FOUND").keys.mkString(", ")}")
+      }
+      
+      // Show default values applied
+      val defaultValues = pipelineConfig.matchedKeys.filter { case (key, value) =>
+        (key == "LstUpdDt" || key == "CrtDt") && value.matches("\\d+") ||
+        (key == "CrtUsr" || key == "UpdUsr") && value == "Admin" ||
+        key == "Target_config.uuid" && value.contains("+Couchbase+")
+      }
+      
+      if (defaultValues.nonEmpty) {
+        println(s"  - Default values applied:")
+        defaultValues.foreach { case (key, value) =>
+          println(s"    * $key = $value")
+        }
       }
     }
   }
@@ -343,9 +417,10 @@ object EnhancedConfigParser {
   def main(args: Array[String]): Unit = {
     val configFilePath = if (args.nonEmpty) args(0) else "/home/ubuntu/upload/configload.txt"
     
-    println("=== Enhanced Config Parser Started ===")
+    println("=== Enhanced Config Parser with Defaults Started ===")
     println(s"Parsing config file: $configFilePath")
     println(s"Looking for ${jsonKeys.length} keys per pipeline...")
+    println(s"Current epoch time: ${getCurrentEpochMillis()}")
     println()
     
     // Parse the config file
@@ -366,10 +441,10 @@ object EnhancedConfigParser {
         // Generate and save combined JSON
         val combinedJson = generateCombinedJson(pipelineConfigs)
         Try {
-          val writer = new PrintWriter("all_pipelines_config.json")
+          val writer = new PrintWriter("all_pipelines_config_with_defaults.json")
           try {
             writer.write(combinedJson)
-            println(s"\nCombined JSON output saved to: all_pipelines_config.json")
+            println(s"\nCombined JSON output saved to: all_pipelines_config_with_defaults.json")
           } finally {
             writer.close()
           }
@@ -389,7 +464,7 @@ object EnhancedConfigParser {
       println("Failed to parse config file or file is empty")
     }
     
-    println("\n=== Enhanced Config Parser Completed ===")
+    println("\n=== Enhanced Config Parser with Defaults Completed ===")
   }
 }
 
