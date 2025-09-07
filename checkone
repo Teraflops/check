@@ -1,6 +1,1 @@
-Apologies, here are some dummy functions for `processType1` and `processType2`: ```scala def processType1(row: Row): Row = { // Add your processing logic for file type 1 here // For example, let's add a new column indicating it's type 1 Row.fromSeq(row.toSeq :+ "Processed as Type 1") } def processType2(row: Row): Row = { // Add your processing logic for file type 2 here // For example, let's add a new column indicating it's type 2 Row.fromSeq(row.toSeq :+ "Processed as Type 2") } ``` These dummy functions simply add a new column to the row indicating the file type. You can replace the placeholder logic with your actual processing steps.
 
-
-
-
-Sure, for structured streaming, you can use `mapPartitions` to process different filetypes. Here's an example of how you can do that: `val processedDf = initAddTransDf.mapPartitions(iterator => { iterator.flatMap(row => { val fileType = row.getAs[String]("FileType") // Process the row based on fileType if (fileType == "type1") { // Handle type1 files Seq(processType1(row)) } else if (fileType == "type2") { // Handle type2 files Seq(processType2(row)) } else { // Handle other file types or skip them Seq.empty } }) })` In this example, replace `processType1` and `processType2` with your specific functions for handling different filetypes. Each function should return a sequence of rows.
