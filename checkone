@@ -3,6 +3,82 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
 import org.apache.spark.Partitioner
 
-// ---- helpers ----
-@inline private def s(x: Any): String = if (x == null) "" else x.toString
+// ---------- executor-safe routing ----------
+object Routing extends Serializable {
+  val outSchema: StructType = StructType(Seq(
+    StructField("_META_ID", StringType, true),
+    StructField("fileType", StringType, true),
+    StructField("payload",  StringType, true),
+    StructField("status",   StringType, true)
+  ))
 
+  val nai15Proc: Row => Row = r =>
+    Row(
+      Option(r.getAs[String]("_META_ID")).getOrElse(""),
+      Option(r.getAs[String]("fileType")).getOrElse(""),
+      Option(r.getAs[String]("raw")).map(_.trim).getOrElse(""),
+      "NAI15_OK"
+    )
+
+  val sofnProc: Row => Row = r =>
+    Row(
+      Option(r.getAs[String]("_META_ID")).getOrElse(""),
+      Option(r.getAs[String]("fileType")).getOrElse(""),
+      Option(r.getAs[String]("raw")).map(_.replaceAll("\\s+", "")).getOrElse(""),
+      "SOFN_OK"
+    )
+
+  val defRow: Row => Row = r =>
+    Row(
+      Option(r.getAs[String]("_META_ID")).getOrElse(""),
+      Option(r.getAs[String]("fileType")).getOrElse(""),
+      Option(r.getAs[String]("raw")).getOrElse(""),
+      "UNSUPPORTED"
+    )
+}
+
+final class FileTypePartitioner(typeToPid: Map[String, Int]) extends Partitioner with Serializable {
+  override def numPartitions: Int = math.max(1, typeToPid.size)
+  override def getPartition(key: Any): Int = {
+    val k = Option(key).map(_.toString).getOrElse("NULL_FT")
+    typeToPid.getOrElse(k, 0)
+  }
+}
+
+def processByFileType(df: DataFrame)(implicit spark: SparkSession): DataFrame = {
+  import spark.implicits._
+
+  // 1) sanitize types and nulls and ensure required columns exist
+  val reqCols = Seq("_META_ID", "fileType", "raw")
+  require(reqCols.forall(df.columns.contains), s"Input DataFrame must contain columns: ${reqCols.mkString(", ")}")
+
+  val withType = df
+    .withColumn("fileType", coalesce(col("fileType").cast("string"), lit("NULL_FT")))
+    .withColumn("_META_ID", col("_META_ID").cast("string"))
+    .withColumn("raw",      col("raw").cast("string"))
+
+  // 2) driver: build partition mapping
+  val types     = withType.select("fileType").distinct.as[String].collect
+  val typeToPid = types.zipWithIndex.toMap
+
+  // 3) executors: keyed RDD + partitioning
+  val keyed  = withType.rdd.map(r => (Option(r.getAs[String]("fileType")).getOrElse("NULL_FT"), r))
+  val byType = keyed.partitionBy(new FileTypePartitioner(typeToPid))
+
+  // 4) explicit mapPartitions (null-safe)
+  val outRdd = byType.mapPartitions { it =>
+    if (!it.hasNext) Iterator.empty
+    else {
+      val buf   = it.buffered
+      val ftype = Option(buf.head._1).getOrElse("NULL_FT")
+      val rowFn: Row => Row = ftype match {
+        case "NAI15" => Routing.nai15Proc
+        case "SOFN"  => Routing.sofnProc
+        case _       => Routing.defRow
+      }
+      buf.map { case (_, r) => rowFn(r) }
+    }
+  }
+
+  spark.createDataFrame(outRdd, Routing.outSchema)
+}
