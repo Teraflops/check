@@ -1,1 +1,33 @@
+import org.apache.spark.sql.{SparkSession, Row}
+import org.apache.spark.rdd.RDD
+
+val spark = SparkSession.builder()
+  .appName("Concepts Example")
+  .master("local")
+  .getOrCreate()
+
+// 1. Create RDD from Seq
+val dataSeq: Seq[(String, Int)] = Seq(("Alice", 25), ("Bob", 30), ("Charlie", 35))
+val rdd: RDD[(String, Int)] = spark.sparkContext.parallelize(dataSeq)
+
+// 2. Convert RDD to Row RDD
+val rowRDD: RDD[Row] = rdd.map { case (name, age) => 
+  Row(name, age) 
+}
+
+// 3. Working with partitions (each partition is an Iterator)
+val processedRDD = rdd.mapPartitions { partition: Iterator[(String, Int)] =>
+  // partition is an Iterator of the data in this partition
+  partition.map { case (name, age) => 
+    (name.toUpperCase, age + 1)
+  }
+}
+
+// 4. Collect back to Seq
+val result: Seq[(String, Int)] = processedRDD.collect().toSeq
+
+// 5. Working with DataFrame (which internally uses Row)
+import spark.implicits._
+val df = dataSeq.toDF("name", "age")
+val rows: Array[Row] = df.collect() // Returns Array of Row objects
 
