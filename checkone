@@ -73,3 +73,117 @@ writeStream.foreachBatch { (df: DataFrame, epochId: Long) =>
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.functions._
+import org.apache.spark.Partitioner
+
+// ---------- executor-safe definitions ----------
+object Routing extends Serializable {
+  val outSchema: StructType = StructType(Seq(
+    StructField("_META_ID", StringType, true),
+    StructField("fileType", StringType, true),
+    StructField("payload",  StringType, true),
+    StructField("status",   StringType, true)
+  ))
+
+  // Row transformers (serializable, null-safe)
+  val csvRow: Row => Row = r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).map(_.trim).getOrElse(""), "CSV_OK")
+
+  val jsonRow: Row => Row = r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).map(_.replaceAll("\\s+","")).getOrElse(""), "JSON_OK")
+
+  val xmlRow: Row => Row = r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).getOrElse(""), "XML_OK")
+
+  val defRow: Row => Row = r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).getOrElse(""), "UNSUPPORTED")
+}
+
+final class FileTypePartitioner(typeToPid: Map[String, Int]) extends Partitioner with Serializable {
+  override def numPartitions: Int = math.max(1, typeToPid.size)
+  override def getPartition(key: Any): Int = {
+    val k = Option(key).map(_.toString).getOrElse("NULL_FT")
+    typeToPid.getOrElse(k, 0)
+  }
+}
+
+// ---------- main function ----------
+def processByFileType(df: DataFrame)(implicit spark: SparkSession): DataFrame = {
+  import spark.implicits._
+
+  val withType = df
+    .withColumn("fileType", coalesce(col("fileType").cast("string"), lit("NULL_FT")))
+    .withColumn("_META_ID", col("_META_ID").cast("string"))
+    .withColumn("raw",      col("raw").cast("string"))
+
+  // driver-only
+  val types     = withType.select("fileType").distinct.as[String].collect
+  val typeToPid = types.zipWithIndex.toMap
+
+  // executors: keyed RDD + custom partitioner
+  val keyed  = withType.rdd.map(r => (r.getAs[String]("fileType"), r))
+  val byType = keyed.partitionBy(new FileTypePartitioner(typeToPid))
+
+  // --------- explicit mapPartitions block ----------
+  val outRdd = byType.mapPartitions { it =>
+    if (!it.hasNext) Iterator.empty
+    else {
+      val buf   = it.buffered
+      val ftype = buf.head._1
+      val rowFn: Row => Row = ftype match {
+        case "CSV"  => Routing.csvRow
+        case "JSON" => Routing.jsonRow
+        case "XML"  => Routing.xmlRow
+        case _      => Routing.defRow
+      }
+      buf.map { case (_, r) => rowFn(r) }
+    }
+  }
+  // -----------------------------------------------
+
+  spark.createDataFrame(outRdd, Routing.outSchema)
+}
+
+// ---------- example usage ----------
+// implicit val spark: SparkSession = spark  // in spark-shell this already exists
+// val out = processByFileType(initAddTransDf)
+// out.show(false)
+// out.write.format("...").save("...")
+
+
+
+
+
+
+
+
+
+
+
+
+
