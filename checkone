@@ -1,33 +1,126 @@
-import org.apache.spark.sql.{SparkSession, Row}
-import org.apache.spark.rdd.RDD
 
-val spark = SparkSession.builder()
-  .appName("Concepts Example")
-  .master("local")
-  .getOrCreate()
+--- rdd
 
-// 1. Create RDD from Seq
-val dataSeq: Seq[(String, Int)] = Seq(("Alice", 25), ("Bob", 30), ("Charlie", 35))
-val rdd: RDD[(String, Int)] = spark.sparkContext.parallelize(dataSeq)
+import org.apache.spark.sql.{Row, DataFrame}
+import org.apache.spark.sql.functions._
+import org.apache.spark.Partitioner
 
-// 2. Convert RDD to Row RDD
-val rowRDD: RDD[Row] = rdd.map { case (name, age) => 
-  Row(name, age) 
+// --- output schema/encoder from your existing code ---
+val outSchema = StructType(Seq(
+  StructField("_META_ID", StringType, true),
+  StructField("fileType", StringType, true),
+  StructField("payload", StringType, true),
+  StructField("status", StringType, true)
+))
+
+// --- processors from your existing code; make null-safe if needed ---
+def csvProc(rows: Iterator[Row]): Iterator[Row] =
+  rows.map { r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).map(_.trim).getOrElse(""), "CSV_OK")
+  }
+def jsonProc(rows: Iterator[Row]): Iterator[Row] =
+  rows.map { r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).map(_.replaceAll("\\s+","")).getOrElse(""), "JSON_OK")
+  }
+def xmlProc(rows: Iterator[Row]): Iterator[Row] =
+  rows.map { r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).getOrElse(""), "XML_OK")
+  }
+def defaultProc(rows: Iterator[Row]): Iterator[Row] =
+  rows.map { r =>
+    Row(r.getAs[String]("_META_ID"), r.getAs[String]("fileType"),
+        Option(r.getAs[String]("raw")).getOrElse(""), "UNSUPPORTED")
+  }
+
+val processors: Map[String, Iterator[Row] => Iterator[Row]] =
+  Map("CSV" -> csvProc _, "JSON" -> jsonProc _, "XML" -> xmlProc _)
+
+// --- collect distinct types to pin 1 type per partition ---
+val types: Array[String] =
+  initAddTransDf.select(col("fileType").cast("string")).na.fill("NULL_FT").distinct.as[String].collect
+val typeToPid: Map[String, Int] = types.zipWithIndex.toMap
+
+class FileTypePartitioner(map: Map[String, Int]) extends Partitioner with Serializable {
+  override def numPartitions: Int = math.max(map.size, 1)
+  override def getPartition(key: Any): Int =
+    map.getOrElse(Option(key).map(_.toString).getOrElse("NULL_FT"), 0)
 }
 
-// 3. Working with partitions (each partition is an Iterator)
-val processedRDD = rdd.mapPartitions { partition: Iterator[(String, Int)] =>
-  // partition is an Iterator of the data in this partition
-  partition.map { case (name, age) => 
-    (name.toUpperCase, age + 1)
+// --- key the rows and repartition by fileType ---
+val keyed = initAddTransDf.rdd.map { r =>
+  (Option(r.getAs[String]("fileType")).getOrElse("NULL_FT"), r)
+}
+val perType = keyed.partitionBy(new FileTypePartitioner(typeToPid))
+
+// --- mapPartitions on the keyed RDD ---
+val processedRdd = perType.mapPartitions { it =>
+  if (!it.hasNext) Iterator.empty
+  else {
+    val buf = it.buffered                          // Iterator[(String, Row)]
+    val ftype = buf.head._1                        // fileType for this partition
+    val proc = processors.getOrElse(ftype, defaultProc _)
+    val rowIter = buf.map(_._2)                    // strip keys
+    proc(rowIter)                                  // Iterator[Row] -> Iterator[Row]
   }
 }
 
-// 4. Collect back to Seq
-val result: Seq[(String, Int)] = processedRDD.collect().toSeq
+// --- back to DataFrame ---
+val processedDf = spark.createDataFrame(processedRdd, outSchema)
+processedDf.show(false)
 
-// 5. Working with DataFrame (which internally uses Row)
-import spark.implicits._
-val df = dataSeq.toDF("name", "age")
-val rows: Array[Row] = df.collect() // Returns Array of Row objects
+
+
+
+
+
+
+
+import org.apache.spark.sql.{Row, DataFrame}
+import org.apache.spark.sql.functions._
+import org.apache.spark.HashPartitioner
+import org.apache.spark.Partitioner
+
+// 1) Collect distinct file types on driver
+val types: Array[String] =
+  initAddTransDf.select(col("fileType").cast("string")).na.fill("NULL_FT").distinct.as[String].collect
+
+// 2) Map each type -> unique partition id
+val typeToPid: Map[String, Int] = types.zipWithIndex.toMap
+
+// 3) Custom partitioner that pins each fileType to its own partition
+class FileTypePartitioner(map: Map[String, Int]) extends Partitioner with Serializable {
+  override def numPartitions: Int = map.size.max(1)
+  override def getPartition(key: Any): Int = {
+    val k = Option(key).map(_.toString).getOrElse("NULL_FT")
+    map.getOrElse(k, 0) // unseen types -> 0
+  }
+}
+
+// 4) Key rows by fileType and repartition with the custom partitioner
+val keyed = initAddTransDf.rdd.map { r =>
+  (Option(r.getAs[String]("fileType")).getOrElse("NULL_FT"), r)
+}
+val perTypePartitioned = keyed.partitionBy(new FileTypePartitioner(typeToPid))
+
+// 5) Apply the per-partition processor chosen by that partition’s fileType
+val processedRdd = perTypePartitioned.mapPartitions { it =>
+  if (!it.hasNext) Iterator.empty
+  else {
+    val buf = it.buffered
+    val ftype = buf.head._1
+    val proc = processors.getOrElse(ftype, defaultProc _)
+    proc(buf.map(_._2)) // feed only Rows to your processor
+  }
+}
+
+// 6) Back to DataFrame with your output schema/encoder
+val processedDf = spark.createDataFrame(processedRdd, outSchema)
+processedDf.show(false)
+
+
+
+
 
