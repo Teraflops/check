@@ -1,12 +1,1 @@
-As discussed during our call, please find below the consolidated points for clarity and alignment.
-	•	Attribute Identification: Attributes (current and potential) required to support payment and transaction use cases (Reporting and UI dashboards) will be identified and shared with the Couchbase team. POC: Raghu (Reporting) and Andrzej (Payment Management). The finalized column list will be added to the existing spreadsheet.
-	•	Logical Model: The logical model loaded into Couchbase will include only the superset of attributes required for existing use cases. Unused attributes will not be loaded.
-	•	Staging Data Availability: The Couchbase team will continue to have access to all existing table columns in the staging layer (Hive/Iceberg) for the past 26 months, covering both reporting and payment pillars.
-	•	Future Enhancements: If new attributes are required for upcoming use cases, they will be treated as new requirements for Couchbase and API teams. Data for history load will be sourced from staging, with partners aligned for testing.
 
-Illustrative Example (Raghu’s reference):
-	•	PTPN table has 800 columns.
-	•	For reporting, ~600 columns are required. For payments, ~5 columns are required.
-	•	Couchbase will store 605 columns (superset to support both use cases), while the staging layer (Hive/Iceberg) will retain all 800 columns for the last 26 months.
-
-Kindly review and advise if any additional points need to be incorporated.
