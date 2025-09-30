@@ -1,33 +1,15 @@
-
-import org.apache.spark.sql.functions._
-
-fileMapDF.foreach { case (fileType, unionedDF) =>
-  fileType match {
-    case "NAI15" =>
-      val nai15Df =
-        unionedDF.alias("file")
-          .join(
-            inputDF.alias("Filter"),
-            col("file.FileId") === col("Filter.FileId") &&
-            col("file.RunId")  === col("Filter.RunId"),
-            "left_outer"
-          )
-          .select(
-            col("Filter.FileId"),
-            col("Filter.RunId"),
-            col("Filter.FileImportFileName"),
-            col("Filter.isValid"),
-            col("Filter.FileTimestamp"),
-            col("Filter.ClntId"),
-            col("Filter.UserId"),
-            col("Filter.TotErr"),
-            col("Filter.TotTrans"),
-            col("Filter.UserNam"),
-            col("Filter.ClntNam"),
-            col("Filter.NasPath")
-          )
-
-      nai15Df.show(false)
-    case _ => ()
-  }
-}
+spark-shell \
+  --master yarn \
+  --deploy-mode client \
+  --conf spark.eventLog.enabled=false \
+  --conf spark.sql.adaptive.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+  --conf spark.sql.shuffle.partitions=200 \
+  --conf spark.default.parallelism=200 \
+  --conf spark.executor.instances=8 \
+  --conf spark.executor.cores=3 \
+  --conf spark.executor.memory=6g \
+  --conf spark.executor.memoryOverhead=2g \
+  --conf spark.driver.memory=8g \
+  --conf spark.driver.maxResultSize=2g \
+  --conf spark.sql.files.maxPartitionBytes=134217728   # 128MB
