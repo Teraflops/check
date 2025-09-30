@@ -1,1 +1,33 @@
 
+import org.apache.spark.sql.functions._
+
+fileMapDF.foreach { case (fileType, unionedDF) =>
+  fileType match {
+    case "NAI15" =>
+      val nai15Df =
+        unionedDF.alias("file")
+          .join(
+            inputDF.alias("Filter"),
+            col("file.FileId") === col("Filter.FileId") &&
+            col("file.RunId")  === col("Filter.RunId"),
+            "left_outer"
+          )
+          .select(
+            col("Filter.FileId"),
+            col("Filter.RunId"),
+            col("Filter.FileImportFileName"),
+            col("Filter.isValid"),
+            col("Filter.FileTimestamp"),
+            col("Filter.ClntId"),
+            col("Filter.UserId"),
+            col("Filter.TotErr"),
+            col("Filter.TotTrans"),
+            col("Filter.UserNam"),
+            col("Filter.ClntNam"),
+            col("Filter.NasPath")
+          )
+
+      nai15Df.show(false)
+    case _ => ()
+  }
+}
