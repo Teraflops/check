@@ -1,56 +1,60 @@
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 
-// 1) Build dqStatus exactly as you do, with FAILURE_KEYS = collect_set("key")
-//    ...
+// ----- 0) assume dqStatus already built and has column FAILURE_KEYS (array<string>) -----
 
-val MB15 = 15 * 1024 * 1024
+val FifteenMB = 15 * 1024 * 1024
 
-// size of the doc without FAILURE_KEYS (per row)
-val baseJson = to_json(struct(dqStatus.columns.filter(_ != "FAILURE_KEYS").map(col): _*))
-val baseSizeCol = length(baseJson)
+// base size without FAILURE_KEYS
+val baseJson   = to_json(struct(dqStatus.columns.filter(_ != "FAILURE_KEYS").map(col): _*))
+val baseSize   = length(baseJson)
 
-// budget left for FAILURE_KEYS per row; keep ≥1 KB floor and some headroom
-val budgetCol = greatest(lit(1024), lit(MB15 - 64*1024) - baseSizeCol) // 64 KB slack
+// leave 64 KB headroom
+val budgetCol  = greatest(lit(1024), lit(FifteenMB - 64 * 1024) - baseSize)
 
-// UDF to pack strings into chunks under a byte budget
-val chunkUdf = udf { (arr: Seq[String], budgetBytes: Int) =>
+// pack strings into chunks under byte budget
+val chunkUdf = udf { (arr: Seq[String], budget: Int) =>
   if (arr == null || arr.isEmpty) Seq(Seq.empty[String])
   else {
-    val overheadPerElem = 6 // rough BSON/JSON overhead per element
     val out = scala.collection.mutable.ArrayBuffer[Seq[String]]()
     var cur = scala.collection.mutable.ArrayBuffer[String]()
     var curBytes = 0
+    val overhead = 6 // rough per-element overhead
     arr.foreach { s =>
       val b = if (s == null) 0 else s.getBytes("UTF-8").length
-      val need = b + overheadPerElem
-      if (cur.nonEmpty && curBytes + need > budgetBytes) {
+      if (cur.nonEmpty && curBytes + b + overhead > budget) {
         out += cur.toSeq; cur.clear(); curBytes = 0
       }
       cur += s
-      curBytes += need
+      curBytes += b + overhead
     }
     if (cur.nonEmpty) out += cur.toSeq
     out.toSeq
   }
 }
 
-// 2) Create chunks and explode to multiple documents
-val dqChunked =
+// 1) add chunks
+val withChunks =
   dqStatus
     .withColumn("FAILURE_KEYS_CHUNKS", chunkUdf(col("FAILURE_KEYS"), budgetCol))
-    .select(col("*"), posexplode(col("FAILURE_KEYS_CHUNKS")).as(Seq("chunk_idx","chunk_vals"): _*))
+
+// 2) explode chunks into multiple rows
+val dqChunked =
+  withChunks
+    .selectExpr("*", "posexplode(FAILURE_KEYS_CHUNKS) as (chunk_idx, chunk_vals)")
     .drop("FAILURE_KEYS_CHUNKS", "FAILURE_KEYS")
     .withColumn("FAILURE_KEYS", col("chunk_vals"))
     .drop("chunk_vals")
 
-// 3) Ensure unique _id per chunk (append chunk index or create a new id)
+// 3) ensure unique _id per chunk
 val dqForWrite =
-  dqChunked.withColumn("_id",
-    concat_ws(":", col("_id").cast("string"), lit("part"), col("chunk_idx").cast("string"))
-  ).drop("chunk_idx")
+  dqChunked
+    .withColumn("_id",
+      concat_ws(":", col("_id").cast("string"), lit("part"), col("chunk_idx").cast("string"))
+    )
+    .drop("chunk_idx")
 
-// 4) Write
+// 4) write to Mongo
 dqForWrite.write
   .format("mongodb")
   .mode("append")
