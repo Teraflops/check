@@ -1,46 +1,47 @@
-version: v1
-
-tasks:
-  - ref: java-maven-build
-    name: java11-build
-    params:
-      - name: jdk-version
-        value: "11"
-      - name: context-dir
-        value: "./AdditionalTransform"
-      - name: goals
-        value:
-          - clean
-          - package
-
-  - ref: java-maven-build
-    name: java17-build
-    params:
-      - name: jdk-version
-        value: "17"
-      - name: context-dir
-        value: "./AdditionalTransform"
-      - name: goals
-        value:
-          - clean
-          - package
-
   - ref: ansible-distribution-publish
-    name: jar-publish
+    name: publish-config
     params:
       - name: source-file-path
-        value: "./AdditionalTransform/target/nextgen-citidirect-3.0.1.jar"  # update if different
+        value: "./config"
       - name: artifact-name
-        value: "nextgen-citidirect-3.0.1.jar"
-    runAfter:
-      - java11-build
-
-  - ref: ansible-distribution-publish
-    name: jar17-publish
-    params:
-      - name: source-file-path
-        value: "./AnotherTransform/target/nextgen-citidirect-3.0.1.jar"      # update if different
-      - name: artifact-name
-        value: "nextgen-citidirect-3.0.1.jar"
+        value: "config"
     runAfter:
       - java17-build
+
+  - ref: ansible-distribution-publish
+    name: publish-lib
+    params:
+      - name: source-file-path
+        value: "./lib"
+      - name: artifact-name
+        value: "lib"
+    runAfter:
+      - jar-publish
+
+  - ref: ansible-distribution-publish
+    name: publish-main
+    params:
+      - name: source-file-path
+        value: "./main"
+      - name: artifact-name
+        value: "main"
+    runAfter:
+      - publish-lib
+
+  - ref: ansible-distribution-publish
+    name: publish-shellscripts
+    params:
+      - name: source-file-path
+        value: "./scripts"
+      - name: artifact-name
+        value: "scripts"
+    runAfter:
+      - publish-main
+
+  - ref: ansible-playbook-publish
+    name: publish-uat2-playbook
+    params:
+      - name: playbook-name
+        value: "uat2-playbook.yml"   # set to your actual playbook file
+    runAfter:
+      - publish-shellscripts
