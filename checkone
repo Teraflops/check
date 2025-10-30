@@ -1,3 +1,50 @@
+version: v1
+
+tasks:
+  - ref: java-maven-build
+    name: java11-build
+    params:
+      - name: jdk-version
+        value: "11"
+      - name: context-dir
+        value: "./AdditionalTransform"
+      - name: goals
+        value:
+          - clean
+          - package
+
+  - ref: java-maven-build
+    name: java17-build
+    params:
+      - name: jdk-version
+        value: "17"
+      - name: context-dir
+        value: "./AdditionalTransform"
+      - name: goals
+        value:
+          - clean
+          - package
+
+  - ref: ansible-distribution-publish
+    name: jar-publish
+    params:
+      - name: source-file-path
+        value: "./AdditionalTransform/target/nextgen-citidirect-3.0.1.jar"   # adjust path
+      - name: artifact-name
+        value: "nextgen-citidirect-3.0.1.jar"
+    runAfter:
+      - java11-build
+
+  - ref: ansible-distribution-publish
+    name: jar17-publish
+    params:
+      - name: source-file-path
+        value: "./AnotherTransform/target/nextgen-citidirect-3.0.1.jar"      # adjust path
+      - name: artifact-name
+        value: "nextgen-citidirect-3.0.1.jar"
+    runAfter:
+      - java17-build
+
   - ref: ansible-distribution-publish
     name: publish-config
     params:
@@ -38,10 +85,39 @@
     runAfter:
       - publish-main
 
+  # Conditional playbook publishes by branch
   - ref: ansible-playbook-publish
     name: publish-uat2-playbook
     params:
       - name: playbook-name
-        value: "uat2-playbook.yml"   # set to your actual playbook file
+        value: "uat2-ansible"                    # set to actual file if needed
     runAfter:
       - publish-shellscripts
+    when:
+      - input: "${params.gitBranch}"
+        operator: in
+        values: ["release/testing2"]
+
+  - ref: ansible-playbook-publish
+    name: publish-uat-playbook
+    params:
+      - name: playbook-name
+        value: "uat-ansible"
+    runAfter:
+      - publish-shellscripts
+    when:
+      - input: "${params.gitBranch}"
+        operator: in
+        values: ["release/testing"]
+
+  - ref: ansible-playbook-publish
+    name: publish-playbook
+    params:
+      - name: playbook-name
+        value: "ansible"
+    runAfter:
+      - publish-shellscripts
+    when:
+      - input: "${params.gitBranch}"
+        operator: notin
+        values: ["release/testing", "release/testing2"]
