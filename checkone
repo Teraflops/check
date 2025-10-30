@@ -1,65 +1,46 @@
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types._
+version: v1
 
-// ----- 0) assume dqStatus already built and has column FAILURE_KEYS (array<string>) -----
+tasks:
+  - ref: java-maven-build
+    name: java11-build
+    params:
+      - name: jdk-version
+        value: "11"
+      - name: context-dir
+        value: "./AdditionalTransform"
+      - name: goals
+        value:
+          - clean
+          - package
 
-val FifteenMB = 15 * 1024 * 1024
+  - ref: java-maven-build
+    name: java17-build
+    params:
+      - name: jdk-version
+        value: "17"
+      - name: context-dir
+        value: "./AdditionalTransform"
+      - name: goals
+        value:
+          - clean
+          - package
 
-// base size without FAILURE_KEYS
-val baseJson   = to_json(struct(dqStatus.columns.filter(_ != "FAILURE_KEYS").map(col): _*))
-val baseSize   = length(baseJson)
+  - ref: ansible-distribution-publish
+    name: jar-publish
+    params:
+      - name: source-file-path
+        value: "./AdditionalTransform/target/nextgen-citidirect-3.0.1.jar"  # update if different
+      - name: artifact-name
+        value: "nextgen-citidirect-3.0.1.jar"
+    runAfter:
+      - java11-build
 
-// leave 64 KB headroom
-val budgetCol  = greatest(lit(1024), lit(FifteenMB - 64 * 1024) - baseSize)
-
-// pack strings into chunks under byte budget
-val chunkUdf = udf { (arr: Seq[String], budget: Int) =>
-  if (arr == null || arr.isEmpty) Seq(Seq.empty[String])
-  else {
-    val out = scala.collection.mutable.ArrayBuffer[Seq[String]]()
-    var cur = scala.collection.mutable.ArrayBuffer[String]()
-    var curBytes = 0
-    val overhead = 6 // rough per-element overhead
-    arr.foreach { s =>
-      val b = if (s == null) 0 else s.getBytes("UTF-8").length
-      if (cur.nonEmpty && curBytes + b + overhead > budget) {
-        out += cur.toSeq; cur.clear(); curBytes = 0
-      }
-      cur += s
-      curBytes += b + overhead
-    }
-    if (cur.nonEmpty) out += cur.toSeq
-    out.toSeq
-  }
-}
-
-// 1) add chunks
-val withChunks =
-  dqStatus
-    .withColumn("FAILURE_KEYS_CHUNKS", chunkUdf(col("FAILURE_KEYS"), budgetCol))
-
-// 2) explode chunks into multiple rows
-val dqChunked =
-  withChunks
-    .selectExpr("*", "posexplode(FAILURE_KEYS_CHUNKS) as (chunk_idx, chunk_vals)")
-    .drop("FAILURE_KEYS_CHUNKS", "FAILURE_KEYS")
-    .withColumn("FAILURE_KEYS", col("chunk_vals"))
-    .drop("chunk_vals")
-
-// 3) ensure unique _id per chunk
-val dqForWrite =
-  dqChunked
-    .withColumn("_id",
-      concat_ws(":", col("_id").cast("string"), lit("part"), col("chunk_idx").cast("string"))
-    )
-    .drop("chunk_idx")
-
-// 4) write to Mongo
-dqForWrite.write
-  .format("mongodb")
-  .mode("append")
-  .option("connection.uri", mongoURI)
-  .option("database", dqDb.split("\\.")(0))
-  .option("collection", dqDb.split("\\.")(1))
-  .option("idFieldList", "_id")
-  .save()
+  - ref: ansible-distribution-publish
+    name: jar17-publish
+    params:
+      - name: source-file-path
+        value: "./AnotherTransform/target/nextgen-citidirect-3.0.1.jar"      # update if different
+      - name: artifact-name
+        value: "nextgen-citidirect-3.0.1.jar"
+    runAfter:
+      - java17-build
