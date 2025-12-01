@@ -56,68 +56,45 @@ tasks:
       - java17-build
 
   - ref: ansible-distribution-publish
-    name: publish-lib
-    params:
-      - name: source-file-path
-        value: "./lib"
-      - name: artifact-name
-        value: "lib"
-    runAfter:
-      - jar-publish
+    name: publish-
 
-  - ref: ansible-distribution-publish
-    name: publish-main
-    params:
-      - name: source-file-path
-        value: "./main"
-      - name: artifact-name
-        value: "main"
-    runAfter:
-      - publish-lib
 
-  - ref: ansible-distribution-publish
-    name: publish-shellscripts
-    params:
-      - name: source-file-path
-        value: "./scripts"
-      - name: artifact-name
-        value: "scripts"
-    runAfter:
-      - publish-main
 
-  # Conditional playbook publishes by branch
-  - ref: ansible-playbook-publish
-    name: publish-uat2-playbook
-    params:
-      - name: playbook-name
-        value: "uat2-ansible"                    # set to actual file if needed
-    runAfter:
-      - publish-shellscripts
-    when:
-      - input: "${params.gitBranch}"
-        operator: in
-        values: ["release/testing2"]
 
-  - ref: ansible-playbook-publish
-    name: publish-uat-playbook
-    params:
-      - name: playbook-name
-        value: "uat-ansible"
-    runAfter:
-      - publish-shellscripts
-    when:
-      - input: "${params.gitBranch}"
-        operator: in
-        values: ["release/testing"]
 
-  - ref: ansible-playbook-publish
-    name: publish-playbook
-    params:
-      - name: playbook-name
-        value: "ansible"
-    runAfter:
-      - publish-shellscripts
-    when:
-      - input: "${params.gitBranch}"
-        operator: notin
-        values: ["release/testing", "release/testing2"]
+import org.apache.spark.sql.SparkSession
+
+val mongoUser = "CTISDQMDB"
+val mongoPass = "<password-from-cyberark-or-env>"
+
+val mongoHosts =
+  "maas-gt-p338-l2001.nam.nsroot.net:37017," +
+  "maas-mw-p319-l2001.nam.nsroot.net:37017," +
+  "maas-mw-p259-l2002.nam.nsroot.net:37017"
+
+val database   = "Catalog"
+val collection = "DQ_RT_STATUS"
+
+val additionalParams = "authSource=admin&readPreference=primary&ssl=true"
+
+val mongoUri =
+  s"mongodb://$mongoUser:$mongoPass@$mongoHosts/$database?$additionalParams"
+
+val spark = SparkSession.builder()
+  .appName("ReadFromMongoDQ")
+  .config("spark.mongodb.read.connection.uri", mongoUri)
+  .config("spark.mongodb.write.connection.uri", mongoUri)
+  .getOrCreate()
+
+val df = spark.read
+  .format("mongodb")
+  .option("database", database)
+  .option("collection", collection)
+  .load()
+
+df.show(false)
+
+val selected = df.select("RUN_GROUP", "COLUMN_NAME", "CHECK_TYPE", "microbatch_id")
+selected.show(false)
+
+
