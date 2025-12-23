@@ -1,100 +1,51 @@
-version: v1
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.functions._
 
-tasks:
-  - ref: java-maven-build
-    name: java11-build
-    params:
-      - name: jdk-version
-        value: "11"
-      - name: context-dir
-        value: "./AdditionalTransform"
-      - name: goals
-        value:
-          - clean
-          - package
+val spark: SparkSession = SparkSession.builder().getOrCreate()
 
-  - ref: java-maven-build
-    name: java17-build
-    params:
-      - name: jdk-version
-        value: "17"
-      - name: context-dir
-        value: "./AdditionalTransform"
-      - name: goals
-        value:
-          - clean
-          - package
+def dateToEpochMs(cols: Seq[String], df: DataFrame): DataFrame =
+  cols.foldLeft(df) { (d, c) =>
+    // unix_timestamp = seconds, so multiply by 1000 to get epoch millis
+    d.withColumn(c, (unix_timestamp(to_timestamp(col(c))) * 1000L).cast("long"))
+  }
 
-  - ref: ansible-distribution-publish
-    name: jar-publish
-    params:
-      - name: source-file-path
-        value: "./AdditionalTransform/target/nextgen-citidirect-3.0.1.jar"   # adjust path
-      - name: artifact-name
-        value: "nextgen-citidirect-3.0.1.jar"
-    runAfter:
-      - java11-build
+// Columns you had in Python
+val dateList = Seq("LstStmtDt", "StmtEntDt", "LstUpdDt", "AcctOpnDt")
 
-  - ref: ansible-distribution-publish
-    name: jar17-publish
-    params:
-      - name: source-file-path
-        value: "./AnotherTransform/target/nextgen-citidirect-3.0.1.jar"      # adjust path
-      - name: artifact-name
-        value: "nextgen-citidirect-3.0.1.jar"
-    runAfter:
-      - java17-build
+// Equivalent of: row_number() over(partition by acct_id, clnt_id order by etl_load_dt desc) as rank
+val w = Window.partitionBy(col("acct_id"), col("clnt_id")).orderBy(col("etl_load_dt").desc)
 
-  - ref: ansible-distribution-publish
-    name: publish-config
-    params:
-      - name: source-file-path
-        value: "./config"
-      - name: artifact-name
-        value: "config"
-    runAfter:
-      - java17-build
+val accountScpnBase =
+  spark.table("NEXTGEN_CB.ACCOUNT_SCPN")
+    .withColumn("rank", row_number().over(w))
+    .filter(col("rank") === 1)
+    .drop("rank")
 
-  - ref: ansible-distribution-publish
-    name: publish-
+// If you want to replicate the long .withColumnRenamed(...) chain, do it via a map:
+val renamePairs: Seq[(String, String)] = Seq(
+  // Examples from your screenshot (add the rest of your renames here)
+  ("BR_NAM", "BrNm"),
+  ("CLNT_NAM", "ClntNm"),
+  ("CLNT_ID", "ClntId"),
+  ("ACCT_ID", "AcctId")
+  // ... continue for all other withColumnRenamed pairs ...
+)
 
+def applyRenames(df: DataFrame, pairs: Seq[(String, String)]): DataFrame =
+  pairs.foldLeft(df) { case (d, (from, to)) => d.withColumnRenamed(from, to) }
 
+val accountScpn =
+  applyRenames(accountScpnBase, renamePairs)
+    // Python had current_timestamp()*1000; unix_timestamp(current_timestamp()) gives seconds
+    .withColumn("current_timestamp", (unix_timestamp(current_timestamp()) * 1000L).cast("long"))
+    // add other columns/drops from your script here, e.g.:
+    // .withColumn("UpdUsr", lit("admin"))
+    // .drop("etl_batch_id", "etl_bi_id", "etl_uuid", "etl_load_dt")
+    ;
 
-
-
-import org.apache.spark.sql.SparkSession
-
-val mongoUser = "CTISDQMDB"
-val mongoPass = "<password-from-cyberark-or-env>"
-
-val mongoHosts =
-  "maas-gt-p338-l2001.nam.nsroot.net:37017," +
-  "maas-mw-p319-l2001.nam.nsroot.net:37017," +
-  "maas-mw-p259-l2002.nam.nsroot.net:37017"
-
-val database   = "Catalog"
-val collection = "DQ_RT_STATUS"
-
-val additionalParams = "authSource=admin&readPreference=primary&ssl=true"
-
-val mongoUri =
-  s"mongodb://$mongoUser:$mongoPass@$mongoHosts/$database?$additionalParams"
-
-val spark = SparkSession.builder()
-  .appName("ReadFromMongoDQ")
-  .config("spark.mongodb.read.connection.uri", mongoUri)
-  .config("spark.mongodb.write.connection.uri", mongoUri)
-  .getOrCreate()
-
-val df = spark.read
-  .format("mongodb")
-  .option("database", database)
-  .option("collection", collection)
-  .load()
-
-df.show(false)
-
-val selected = df.select("RUN_GROUP", "COLUMN_NAME", "CHECK_TYPE", "microbatch_id")
-selected.show(false)
-
-
+// Convert selected date columns to epoch millis and write parquet (overwrite)
+dateToEpochMs(dateList, accountScpn)
+  .write
+  .mode("overwrite")
+  .parquet("/data/ttsbdcmds/raw/hive/NEXTGEN_CB/PROD/CD_ACCOUNT_SCPN")
