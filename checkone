@@ -1,1 +1,4 @@
 
+pyspark \
+  --conf "spark.driver.extraJavaOptions=-Djava.io.tmpdir=/var/tmp -Dorg.xerial.snappy.tempdir=/var/tmp" \
+  --conf "spark.executor.extraJavaOptions=-Djava.io.tmpdir=/var/tmp -Dorg.xerial.snappy.tempdir=/var/tmp"
