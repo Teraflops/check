@@ -1,4 +1,82 @@
+WITH base_keys AS (
+    SELECT RAW "TIPaymentTranPartNew" || p.TranNo
+    FROM `NGRAW`.`CITIDIRECT_FACT`.`CDMART_GG_PTPN` AS p
+    WHERE p.epochId = 15315
+),
+base_ptpn AS (
+    SELECT p.*
+    FROM `NGRAW`.`CITIDIRECT_FACT`.`CDMART_GG_PTPN` AS p
+    USE KEYS base_keys
+),
+tax_agg AS (
+    SELECT
+        t.TranNo,
 
-pyspark \
-  --conf "spark.driver.extraJavaOptions=-Djava.io.tmpdir=/var/tmp -Dorg.xerial.snappy.tempdir=/var/tmp" \
-  --conf "spark.executor.extraJavaOptions=-Djava.io.tmpdir=/var/tmp -Dorg.xerial.snappy.tempdir=/var/tmp"
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxCatTyp END)  AS Tax1CatTyp,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxPct END)     AS Tax1Pct,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxablAmt END) AS Taxable1Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxAmt END)    AS Tax1Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxDsc END)    AS Tax1Des,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxTyp END)    AS Tax1Typ,
+
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxCatTyp END)  AS Tax2CatTyp,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxPct END)     AS Tax2Pct,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxablAmt END) AS Taxable2Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxAmt END)    AS Tax2Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxDsc END)    AS Tax2Des,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxTyp END)    AS Tax2Typ,
+
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxCatTyp END)  AS Tax3CatTyp,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxPct END)     AS Tax3Pct,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxablAmt END) AS Taxable3Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxAmt END)    AS Tax3Amt,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxDsc END)    AS Tax3Des,
+        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxTyp END)    AS Tax3Typ,
+
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxCatTyp END)  AS TaxVCatTyp,
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxPct END)     AS TaxVPct,
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxablAmt END) AS TaxableVAmt,
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxAmt END)    AS TaxVAmt,
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxDsc END)    AS TaxVDes,
+        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxTyp END)    AS TaxVTyp
+
+    FROM `NGRAW`.`CITIDIRECT_REF`.`TRANSACTION_TAXES` AS t
+    JOIN base_ptpn AS b
+      ON t.TranNo = b.TranNo
+    WHERE t.TaxCatTyp IN ["WHT1", "WHT2", "WHT3", "VAT"]
+    GROUP BY t.TranNo
+)
+SELECT
+    /* keep your original SELECT list here */
+    /* visible example from your screenshot: */
+    tax.TaxVCatTyp AS TaxVCatTyp,
+    tax.TaxVPct    AS TaxVPct,
+    tax.TaxableVAmt AS TaxableVAmt,
+    tax.TaxVAmt    AS TaxVAmt,
+    tax.TaxVDes    AS TaxVDes,
+    tax.TaxVTyp    AS TaxVTyp
+FROM base_ptpn AS p
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`TRANSACTION_FEE` AS trfee
+    ON trfee.TranNo = p.TranNo
+LEFT JOIN tax_agg AS tax
+    ON tax.TranNo = p.TranNo
+LEFT JOIN `NGRAW`.`CITIDIRECT_DIM`.`CTRY_BR_DELV_MTHD` AS ctryBrDelvMthd
+    ON ctryBrDelvMthd.CbdmBrCd   = p.BrCod
+   AND ctryBrDelvMthd.DelvMthdCd = p.DelvMthdCod
+   AND ctryBrDelvMthd.IsoCtrCd   = p.ProcLocaCtryCod
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`CENTRAL_BANK_REPORTING` AS cbr
+    ON KEYS ("CentralBankReporting" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`DIVIDEND` AS dvnd
+    ON KEYS ("Dividend" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENTS_CR_TRANSFER_SUBFORM` AS subfrm
+    ON KEYS ("PaymentCrXfrSubform" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENTS_CUSTOM_FIELDS` AS cstfld
+    ON KEYS ("PaymentCustomFields" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENT_TRAN_INVC_DETL` AS invc
+    ON KEYS ("PaymentTranInvcDetl" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYSLIP` AS pyslp
+    ON KEYS ("Payslip" || p.TranNo)
+LEFT JOIN `NGRAW`.`CITIDIRECT_DIM`.`USER_TBL` AS usrtbl
+    ON KEYS ("UserTbl" || TOSTRING(p.TranEntUserId) || "PROCESSED")
+LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENT_TRAN_PART_DATA_BLOB` AS blob
+    ON blob.TranNo = p.TranNo;
