@@ -1,0 +1,322 @@
+/* ─── Variables ──────────────────────────────────────────── */
+:root {
+  --bg-primary: #0f0f1a;
+  --bg-secondary: #1a1a2e;
+  --bg-card: #16213e;
+  --bg-input: #1a1a2e;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0b0;
+  --accent: #f7931a;
+  --accent-dim: #c47614;
+  --green: #00c853;
+  --green-bg: rgba(0, 200, 83, 0.1);
+  --red: #ff1744;
+  --red-bg: rgba(255, 23, 68, 0.1);
+  --border: #2a2a40;
+  --radius: 10px;
+}
+
+/* ─── Reset & Base ───────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ─── App Layout ─────────────────────────────────────────── */
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+/* ─── Header ─────────────────────────────────────────────── */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.app-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.live-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--green);
+  color: #000;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Dashboard ──────────────────────────────────────────── */
+.dashboard {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  flex: 1 1 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-card.highlight {
+  border-color: var(--accent-dim);
+}
+
+.stat-card.profit {
+  border-color: var(--green);
+  background: var(--green-bg);
+}
+
+.stat-card.loss {
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.stat-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.profit .stat-value,
+.profit .stat-sub {
+  color: var(--green);
+}
+
+.loss .stat-value,
+.loss .stat-sub {
+  color: var(--red);
+}
+
+/* ─── Purchase Form ──────────────────────────────────────── */
+.purchase-form {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 28px;
+}
+
+.purchase-form h2 {
+  font-size: 1.1rem;
+  margin-bottom: 14px;
+  color: var(--text-primary);
+}
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+.form-group {
+  flex: 1 1 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-group input {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  border-color: var(--accent);
+}
+
+.form-action {
+  flex: 0 0 auto;
+}
+
+.btn-primary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.btn-primary:hover {
+  background: var(--accent-dim);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.form-error {
+  margin-top: 10px;
+  color: var(--red);
+  font-size: 0.85rem;
+}
+
+/* ─── Purchase List ──────────────────────────────────────── */
+.purchase-list {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+}
+
+.purchase-list h2 {
+  font-size: 1.1rem;
+  margin-bottom: 14px;
+}
+
+.purchase-list-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+thead th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+}
+
+tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+td.profit {
+  color: var(--green);
+  font-weight: 600;
+}
+
+td.loss {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.pl-pct {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.btn-delete {
+  padding: 4px 10px;
+  border: 1px solid var(--red);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--red);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-delete:hover {
+  background: var(--red-bg);
+}
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .app-header h1 {
+    font-size: 1.2rem;
+  }
+  .stat-value {
+    font-size: 1.1rem;
+  }
+}
