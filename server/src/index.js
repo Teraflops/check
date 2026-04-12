@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import purchasesRouter from './routes/purchases.js';
 import { startPricePoller, getLatestPrice } from './services/pricePoller.js';
+import { startBlockPoller, getLatestBlocks } from './services/blockPoller.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -24,6 +25,10 @@ app.get('/api/price', (req, res) => {
   res.json(getLatestPrice());
 });
 
+app.get('/api/blocks', (req, res) => {
+  res.json(getLatestBlocks());
+});
+
 // WebSocket
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -34,13 +39,20 @@ io.on('connection', (socket) => {
     socket.emit('priceUpdate', current);
   }
 
+  // Send current blocks immediately to new clients
+  const blocks = getLatestBlocks();
+  if (blocks.length > 0) {
+    socket.emit('blocksUpdate', blocks);
+  }
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
 });
 
-// Start price polling
+// Start pollers
 startPricePoller(io);
+startBlockPoller(io);
 
 const PORT = process.env.PORT || 3001;
 httpServer.listen(PORT, () => {

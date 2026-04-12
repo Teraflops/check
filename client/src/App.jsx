@@ -4,9 +4,10 @@ import { getPurchases, addPurchase, deletePurchase } from './api/purchases';
 import Dashboard from './components/Dashboard';
 import PurchaseForm from './components/PurchaseForm';
 import PurchaseList from './components/PurchaseList';
+import BlockList from './components/BlockList';
 
 export default function App() {
-  const { currentPrice, lastUpdated } = useSocket();
+  const { currentPrice, lastUpdated, blocks, newBlock } = useSocket();
   const [purchases, setPurchases] = useState([]);
 
   const fetchPurchases = useCallback(async () => {
@@ -39,6 +40,13 @@ export default function App() {
         <span className="live-badge">LIVE</span>
       </header>
 
+      {newBlock && (
+        <div className="new-block-alert">
+          New block mined! <strong>#{newBlock.height.toLocaleString()}</strong> by{' '}
+          <strong>{newBlock.pool}</strong> — {newBlock.tx_count.toLocaleString()} transactions
+        </div>
+      )}
+
       <Dashboard
         purchases={purchases}
         currentPrice={currentPrice}
@@ -52,6 +60,8 @@ export default function App() {
         currentPrice={currentPrice}
         onDelete={handleDelete}
       />
+
+      <BlockList blocks={blocks} />
     </div>
   );
 }

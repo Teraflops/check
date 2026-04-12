@@ -311,6 +311,188 @@ td.loss {
   background: var(--red-bg);
 }
 
+/* ─── New Block Alert ────────────────────────────────────── */
+.new-block-alert {
+  background: rgba(247, 147, 26, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+  color: var(--accent);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Block List ─────────────────────────────────────────── */
+.block-list {
+  margin-top: 28px;
+}
+
+.block-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.block-list-header h2 {
+  font-size: 1.1rem;
+}
+
+.block-count {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.block-list-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.blocks-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.block-card:hover {
+  border-color: var(--accent-dim);
+}
+
+.block-card.expanded {
+  border-color: var(--accent);
+}
+
+.block-card-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+}
+
+.block-height-col {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 180px;
+}
+
+.block-icon {
+  font-size: 1.4rem;
+  color: var(--accent);
+}
+
+.block-height {
+  display: block;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--accent);
+}
+
+.block-time {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.block-miner-col {
+  flex: 1 1 140px;
+}
+
+.block-stat-col {
+  flex: 0 0 100px;
+  text-align: right;
+}
+
+.block-field-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.block-miner {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #6ec6ff;
+}
+
+.block-stat {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.block-stat.reward {
+  color: var(--green);
+}
+
+/* ─── Block Details (expanded) ───────────────────────────── */
+.block-card-details {
+  border-top: 1px solid var(--border);
+  padding: 16px 18px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.detail-value {
+  font-size: 0.85rem;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.detail-value.hash {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 /* ─── Responsive ─────────────────────────────────────────── */
 @media (max-width: 600px) {
   .app-header h1 {
@@ -318,5 +500,20 @@ td.loss {
   }
   .stat-value {
     font-size: 1.1rem;
+  }
+  .block-card-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .block-height-col {
+    flex: auto;
+  }
+  .block-stat-col {
+    text-align: left;
+    flex: auto;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 }
