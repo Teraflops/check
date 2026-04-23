@@ -1,82 +1,114 @@
-WITH base_keys AS (
-    SELECT RAW "TIPaymentTranPartNew" || p.TranNo
-    FROM `NGRAW`.`CITIDIRECT_FACT`.`CDMART_GG_PTPN` AS p
-    WHERE p.epochId = 15315
-),
-base_ptpn AS (
-    SELECT p.*
-    FROM `NGRAW`.`CITIDIRECT_FACT`.`CDMART_GG_PTPN` AS p
-    USE KEYS base_keys
-),
-tax_agg AS (
-    SELECT
-        t.TranNo,
+import java.awt.AWTException;
+import java.awt.Dimension;
+import java.awt.MouseInfo;
+import java.awt.Point;
+import java.awt.Robot;
+import java.awt.Toolkit;
+import java.awt.event.KeyEvent;
+import java.io.IOException;
+import java.util.Random;
 
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxCatTyp END)  AS Tax1CatTyp,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxPct END)     AS Tax1Pct,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxablAmt END) AS Taxable1Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxAmt END)    AS Tax1Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxDsc END)    AS Tax1Des,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT1" THEN t.TaxTyp END)    AS Tax1Typ,
-
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxCatTyp END)  AS Tax2CatTyp,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxPct END)     AS Tax2Pct,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxablAmt END) AS Taxable2Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxAmt END)    AS Tax2Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxDsc END)    AS Tax2Des,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT2" THEN t.TaxTyp END)    AS Tax2Typ,
-
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxCatTyp END)  AS Tax3CatTyp,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxPct END)     AS Tax3Pct,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxablAmt END) AS Taxable3Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxAmt END)    AS Tax3Amt,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxDsc END)    AS Tax3Des,
-        MAX(CASE WHEN t.TaxCatTyp = "WHT3" THEN t.TaxTyp END)    AS Tax3Typ,
-
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxCatTyp END)  AS TaxVCatTyp,
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxPct END)     AS TaxVPct,
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxablAmt END) AS TaxableVAmt,
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxAmt END)    AS TaxVAmt,
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxDsc END)    AS TaxVDes,
-        MAX(CASE WHEN t.TaxCatTyp = "VAT" THEN t.TaxTyp END)    AS TaxVTyp
-
-    FROM `NGRAW`.`CITIDIRECT_REF`.`TRANSACTION_TAXES` AS t
-    JOIN base_ptpn AS b
-      ON t.TranNo = b.TranNo
-    WHERE t.TaxCatTyp IN ["WHT1", "WHT2", "WHT3", "VAT"]
-    GROUP BY t.TranNo
-)
-SELECT
-    /* keep your original SELECT list here */
-    /* visible example from your screenshot: */
-    tax.TaxVCatTyp AS TaxVCatTyp,
-    tax.TaxVPct    AS TaxVPct,
-    tax.TaxableVAmt AS TaxableVAmt,
-    tax.TaxVAmt    AS TaxVAmt,
-    tax.TaxVDes    AS TaxVDes,
-    tax.TaxVTyp    AS TaxVTyp
-FROM base_ptpn AS p
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`TRANSACTION_FEE` AS trfee
-    ON trfee.TranNo = p.TranNo
-LEFT JOIN tax_agg AS tax
-    ON tax.TranNo = p.TranNo
-LEFT JOIN `NGRAW`.`CITIDIRECT_DIM`.`CTRY_BR_DELV_MTHD` AS ctryBrDelvMthd
-    ON ctryBrDelvMthd.CbdmBrCd   = p.BrCod
-   AND ctryBrDelvMthd.DelvMthdCd = p.DelvMthdCod
-   AND ctryBrDelvMthd.IsoCtrCd   = p.ProcLocaCtryCod
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`CENTRAL_BANK_REPORTING` AS cbr
-    ON KEYS ("CentralBankReporting" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`DIVIDEND` AS dvnd
-    ON KEYS ("Dividend" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENTS_CR_TRANSFER_SUBFORM` AS subfrm
-    ON KEYS ("PaymentCrXfrSubform" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENTS_CUSTOM_FIELDS` AS cstfld
-    ON KEYS ("PaymentCustomFields" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENT_TRAN_INVC_DETL` AS invc
-    ON KEYS ("PaymentTranInvcDetl" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYSLIP` AS pyslp
-    ON KEYS ("Payslip" || p.TranNo)
-LEFT JOIN `NGRAW`.`CITIDIRECT_DIM`.`USER_TBL` AS usrtbl
-    ON KEYS ("UserTbl" || TOSTRING(p.TranEntUserId) || "PROCESSED")
-LEFT JOIN `NGRAW`.`CITIDIRECT_REF`.`PAYMENT_TRAN_PART_DATA_BLOB` AS blob
-    ON blob.TranNo = p.TranNo;
+public class MouseMover {
+    public static void main(String[] args) {
+        try {
+            Robot robot = new Robot();
+            Random random = new Random();
+            Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+            
+            int screenWidth = (int) screenSize.getWidth();
+            int screenHeight = (int) screenSize.getHeight();
+            
+            System.out.println("Starting MouseMover. Press Ctrl+C in the console to stop.");
+            
+            long lastActiveTime = System.currentTimeMillis();
+            Point lastMousePos = MouseInfo.getPointerInfo().getLocation();
+            
+            while (true) {
+                // Check if user has moved the mouse
+                Point currentMousePos = MouseInfo.getPointerInfo().getLocation();
+                if (currentMousePos.x != lastMousePos.x || currentMousePos.y != lastMousePos.y) {
+                    lastActiveTime = System.currentTimeMillis();
+                }
+                
+                long idleTime = System.currentTimeMillis() - lastActiveTime;
+                
+                // If idle for more than 20 minutes (20 * 60 * 1000 = 1,200,000 ms)
+                if (idleTime > 1200000) {
+                    System.out.println("Idle time exceeded 20 minutes. Opening Notepad and typing...");
+                    openNotepadAndType(robot, random);
+                    // Reset idle time to avoid opening notepad repeatedly immediately
+                    lastActiveTime = System.currentTimeMillis();
+                }
+                
+                // Move mouse to a random location
+                int randomX = random.nextInt(screenWidth);
+                int randomY = random.nextInt(screenHeight);
+                robot.mouseMove(randomX, randomY);
+                System.out.println("Moved mouse to: " + randomX + ", " + randomY);
+                
+                // Switch screens (Alt + Tab)
+                System.out.println("Switching screens (Alt+Tab)...");
+                robot.keyPress(KeyEvent.VK_ALT);
+                robot.keyPress(KeyEvent.VK_TAB);
+                robot.keyRelease(KeyEvent.VK_TAB);
+                robot.keyRelease(KeyEvent.VK_ALT);
+                
+                // Update last known mouse position after we moved it
+                lastMousePos = new Point(randomX, randomY);
+                
+                // Wait for 1 minute (60,000 ms)
+                Thread.sleep(60000);
+            }
+        } catch (AWTException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private static void openNotepadAndType(Robot robot, Random random) {
+        try {
+            // Open Run dialog (Windows Key + R)
+            robot.keyPress(KeyEvent.VK_WINDOWS);
+            robot.keyPress(KeyEvent.VK_R);
+            robot.keyRelease(KeyEvent.VK_R);
+            robot.keyRelease(KeyEvent.VK_WINDOWS);
+            
+            Thread.sleep(500); // Wait for Run dialog
+            
+            // Type "notepad"
+            typeString(robot, "notepad");
+            
+            // Press Enter
+            robot.keyPress(KeyEvent.VK_ENTER);
+            robot.keyRelease(KeyEvent.VK_ENTER);
+            
+            Thread.sleep(2000); // Wait for Notepad to open
+            
+            // Type random keystrokes (20 random characters)
+            for (int i = 0; i < 20; i++) {
+                // Generate a random lowercase letter (a-z)
+                int keyCode = KeyEvent.VK_A + random.nextInt(26);
+                robot.keyPress(keyCode);
+                robot.keyRelease(keyCode);
+                Thread.sleep(100);
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private static void typeString(Robot robot, String text) {
+        for (char c : text.toCharArray()) {
+            int keyCode = KeyEvent.getExtendedKeyCodeForChar(c);
+            if (KeyEvent.CHAR_UNDEFINED == keyCode) {
+                throw new RuntimeException("Key code not found for character '" + c + "'");
+            }
+            robot.keyPress(keyCode);
+            robot.keyRelease(keyCode);
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
