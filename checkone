@@ -5,11 +5,41 @@ import java.awt.Point;
 import java.awt.Robot;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
-import java.io.IOException;
 import java.util.Random;
 
 public class MouseMover {
+    // Shared state variables
+    private static volatile long lastActiveTime = System.currentTimeMillis();
+    private static volatile Point expectedMousePos = MouseInfo.getPointerInfo().getLocation();
+
     public static void main(String[] args) {
+        System.out.println("Starting MouseMover. Press Ctrl+C in the console to stop.");
+
+        // Start the background thread to monitor true user mouse movements
+        Thread monitorThread = new Thread(() -> {
+            Point lastCheckedPos = MouseInfo.getPointerInfo().getLocation();
+            while (true) {
+                try {
+                    Point currentMousePos = MouseInfo.getPointerInfo().getLocation();
+                    
+                    // If the mouse moved, and it wasn't the program that moved it
+                    if (!currentMousePos.equals(lastCheckedPos) && !currentMousePos.equals(expectedMousePos)) {
+                        lastActiveTime = System.currentTimeMillis();
+                    }
+                    
+                    lastCheckedPos = currentMousePos;
+                    Thread.sleep(100); // Check every 100ms
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (Exception e) {
+                    // Ignore exceptions if mouse info cannot be fetched temporarily
+                }
+            }
+        });
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+
+        // Main automation loop
         try {
             Robot robot = new Robot();
             Random random = new Random();
@@ -18,18 +48,7 @@ public class MouseMover {
             int screenWidth = (int) screenSize.getWidth();
             int screenHeight = (int) screenSize.getHeight();
             
-            System.out.println("Starting MouseMover. Press Ctrl+C in the console to stop.");
-            
-            long lastActiveTime = System.currentTimeMillis();
-            Point lastMousePos = MouseInfo.getPointerInfo().getLocation();
-            
             while (true) {
-                // Check if user has moved the mouse
-                Point currentMousePos = MouseInfo.getPointerInfo().getLocation();
-                if (currentMousePos.x != lastMousePos.x || currentMousePos.y != lastMousePos.y) {
-                    lastActiveTime = System.currentTimeMillis();
-                }
-                
                 long idleTime = System.currentTimeMillis() - lastActiveTime;
                 
                 // If idle for more than 20 minutes (20 * 60 * 1000 = 1,200,000 ms)
@@ -38,11 +57,17 @@ public class MouseMover {
                     openNotepadAndType(robot, random);
                     // Reset idle time to avoid opening notepad repeatedly immediately
                     lastActiveTime = System.currentTimeMillis();
+                    
+                    // Update expected pos after typing
+                    expectedMousePos = MouseInfo.getPointerInfo().getLocation();
                 }
                 
                 // Move mouse to a random location
                 int randomX = random.nextInt(screenWidth);
                 int randomY = random.nextInt(screenHeight);
+                
+                // Update expected pos BEFORE moving so the monitor thread knows it's us
+                expectedMousePos = new Point(randomX, randomY);
                 robot.mouseMove(randomX, randomY);
                 System.out.println("Moved mouse to: " + randomX + ", " + randomY);
                 
@@ -52,9 +77,6 @@ public class MouseMover {
                 robot.keyPress(KeyEvent.VK_TAB);
                 robot.keyRelease(KeyEvent.VK_TAB);
                 robot.keyRelease(KeyEvent.VK_ALT);
-                
-                // Update last known mouse position after we moved it
-                lastMousePos = new Point(randomX, randomY);
                 
                 // Wait for 1 minute (60,000 ms)
                 Thread.sleep(60000);
