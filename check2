@@ -1,0 +1,1093 @@
+Agent Income Estimation Tool —
+Consolidated Requirements and User
+Stories
+Author: Manus AI
+Source Basis: User-provided screenshots of the “Income Estimation Tool: Methodology &
+Data Documentation,” Version ., Draft for Legal/OGC Review, as of May , .
+Document Purpose: This document consolidates the business requirement document into
+logical user stories that can be used by product, business analysis, engineering, QA, and
+Legal/OGC review teams.
+. Executive Consolidation
+The Agent Income Estimation Tool is intended to support recruiting conversations by
+helping prospective agents and financial professionals estimate potential first-year
+commission income using a small set of candidate-facing inputs. The source methodology
+explicitly positions the output as a hypothetical estimate, not a guarantee of income. The
+estimate is based on historical internal agent performance data, candidate activity
+assumptions, and the candidate’s selected client market segment.[]
+The logical flow can be separated into five user stories. The first story covers candidate
+input capture. The second covers market segment mapping. The third covers income
+estimate calculation. The fourth covers results presentation and candidate-facing
+sensitivity scenarios. The fifth covers data governance, traceability, assumptions, and
+Legal/OGC controls. This structure keeps the requirements aligned to the way a user
+experiences the tool while preserving the data and compliance logic needed behind the
+scenes.
+Story ID User Story Name Logical Flow Area Primary Actor Business
+Outcome
+US-
+Capture
+Candidate and
+Activity Inputs
+Candidate intake
+Recruiter /
+Candidate
+Collect the
+minimum
+required
+information
+needed to
+estimate firstyear income.
+. Consolidated Requirement Inventory
+The source BRD describes a tool that uses the candidate’s Market Served, Working
+Weeks per Year, and Appointments Kept per Week to determine an estimated first-year
+FYC range. Additional candidate or system fields, such as Candidate Name, Candidate State,
+Registered Rep, and TAS Plan, support identification, eligibility, or downstream plan logic,
+but the visible methodology primarily uses market and activity inputs to produce the base
+estimate.[]
+US-
+Map Market
+Served to Income
+Segment
+Market mapping
+Candidate /
+System
+Select the correct
+historical income
+range based on
+intended client
+market.
+US-
+Calculate Base
+First-Year Income
+Estimate
+Calculation
+engine
+System
+Convert market
+and activity
+inputs into a
+point estimate
+and bounded
+range.
+US-
+Present Results
+and Sensitivity
+Scenarios
+Results
+experience
+Candidate /
+Recruiter
+Display estimate
+and optional
+what-if scenarios
+in a candidatefacing manner.
+US-
+Maintain Data
+Foundation,
+Assumptions,
+and Compliance
+Traceability
+Governance
+Product Owner /
+OGC /
+Administrator
+Ensure
+calculations are
+auditable,
+bounded, and
+aligned with
+approved
+methodology.
+Key interpretation: The business flow does not require many unrelated stories. It is best
+represented as five logically segregated user stories because the BRD describes one
+primary candidate journey supported by calculation, presentation, and governance
+layers.
+Requirement Category Consolidated Requirement Key Rules Captured from BRD
+. User Stories
+Candidate identification
+Capture candidate name and
+candidate state.
+Candidate Name is a free-text
+identifier. Candidate State is
+self-selected from applicable
+states.
+Candidate business profile
+Capture Market Served,
+Registered Rep status, and TAS
+Plan where applicable.
+Market Served options are
+Mass Market, Mid Market,
+Affluent, and High Net Worth.
+Registered Rep defaults to Yes.
+TAS Plan is automated based
+on state availability where
+applicable.
+Activity assumptions
+Capture Working Weeks per
+Year and Appointments Kept
+per Week.
+Working weeks suggested
+range is –. Appointments
+suggested range is – with a
+floor of  and ceiling of .
+Segment mapping
+Map selected market to
+historical FYC range.
+Market segment ranges are
+derived from  FYC deciles
+after filtering out top and
+bottom % outliers.
+Base calculation
+Calculate activity position,
+point estimate, and displayed
+range.
+Appointment position is
+interpolated from anchor
+points; working weeks are
+applied as a scalar; range is
+±% of segment spread and
+bounded by segment limits.
+Results screen
+Display base estimate and
+optional sensitivity levers.
+Sensitivity levers are “Make
+One More Sale Weekly” and
+“% Conversion Increase”;
+both are post-calculation
+adjustments, not primary
+inputs.
+Data governance
+Ensure traceability and
+compliance review.
+Outputs must be traceable to
+historical  data and should
+not exceed observed bounds.
+OGC review remains open for
+key candidate-facing
+constructs.
+US- — Capture Candidate and Activity Inputs
+User Story
+As a recruiter or prospective candidate, I want to enter a small number of candidate
+profile and activity inputs so that the tool can generate a first-year income estimate using a
+simple, guided candidate-facing flow.
+Description
+This story covers the initial intake experience. The tool must collect the fields needed to
+identify the candidate, understand the candidate’s intended market, determine
+applicable plan or state-specific logic, and capture the candidate’s expected first-year
+activity. The intake flow should be concise because the tool is designed for recruiting
+conversations and should not require extensive data entry.
+The BRD identifies the following inputs: Candidate Name, Working Weeks per Year, Market
+Served, Registered Rep, TAS Plan, Appointments Kept per Week, and Candidate State. The
+primary estimation-driving inputs are Market Served, Working Weeks per Year, and
+Appointments Kept per Week. Other fields support identification, business context,
+defaults, state-based availability, or downstream calculations.[]
+Field-Level Requirements
+Field Input Type Source /
+Provisioning
+Options or Range Validation
+Expectation
+Candidate Name Free text
+Automated or
+entered identifier
+Not applicable
+Must support a
+candidate
+identifier; no
+numeric
+calculation
+depends on this
+field.
+Working Weeks
+per Year
+Numeric Self-entered Suggested –
+Must accept
+values within the
+approved logical
+range and
+prevent nonnumeric entries.
+Example
+A recruiter is speaking with a candidate named Jane Smith. Jane expects to work
+productive weeks in her first year, plans to serve the Mid Market, expects to keep
+appointments per week, is operating in an applicable state, and keeps the default
+Registered Rep value of Yes. Once these inputs are entered, the system has enough
+information to select the Mid Market segment and calculate a candidate-facing estimate.
+Acceptance Criteria
+Market Served Single-select Self-selected
+Mass Market, Mid
+Market, Affluent,
+High Net Worth
+Must be required
+because it
+determines the
+income segment.
+Registered Rep Yes / No Self-selected Defaults to Yes
+Must allow Yes or
+No and preserve
+default behavior.
+TAS Plan System-derived Automated
+Builder XP /
+Maximizer, where
+applicable
+Must be
+determined
+based on
+candidate state
+availability
+where relevant.
+Appointments
+Kept per Week
+Numeric Self-entered Suggested –
+Must enforce
+floor of  and
+ceiling of .
+Candidate State Single-select Self-selected
+All applicable
+states
+Must support
+applicable state
+list and drive
+plan availability
+where needed.
+AC ID Given When Then
+US-AC
+The recruiter opens
+the income estimation
+intake flow
+The page loads
+The system displays
+all required candidate
+and activity input
+fields in a clear
+sequence.
+Notes and Dependencies
+The visible BRD states that the Working Weeks range of – and the Appointments range
+of – were treated as logically appropriate. The implementation should confirm whether
+values outside the suggested ranges are strictly blocked or merely warned, but the
+screenshots indicate that the appointment floor and ceiling should be enforced.
+US- — Map Market Served to Income Segment
+US-AC
+A candidate name is
+available
+The name field is
+populated
+The system stores the
+name as an identifier
+and does not use it in
+the income
+calculation.
+US-AC
+The user enters
+Working Weeks per
+Year
+The value is outside
+the accepted numeric
+range
+The system prevents
+calculation and
+displays a validation
+message explaining
+the accepted range.
+US-AC
+The user enters
+Appointments Kept
+per Week
+The value is below  or
+above
+The system prevents
+calculation and
+explains that the
+logical floor is  and
+ceiling is .
+US-AC
+The user selects
+Candidate State
+The state has TAS plan
+implications
+The system
+automatically
+determines the
+applicable TAS plan
+option where
+applicable.
+US-AC
+The user does not
+change Registered Rep
+The form is submitted
+The system uses the
+default value of Yes
+unless the user
+explicitly selects No.
+US-AC
+Any required
+calculation-driving
+field is missing
+The user attempts to
+calculate
+The system identifies
+the missing field and
+does not produce an
+estimate until it is
+completed.
+User Story
+As a prospective candidate, I want my selected client market to map to an appropriate
+historical income range so that the estimate reflects the type of market I intend to serve.
+Description
+This story covers the business logic that translates the candidate’s Market Served
+selection into an income range. The BRD defines four market segments: Mass Market, Mid
+Market, Affluent, and High Net Worth. These segments are mapped to historical FYC ranges
+using the  first-year prior agent income distribution after filtering out the top and
+bottom % of agents by FYC.[]
+The  FYC distribution is divided into ten deciles. Each market segment spans multiple
+deciles, and adjacent segments intentionally overlap. This overlap reflects the practical
+reality that candidates serving adjacent markets may have similar outcomes at the edges of
+the distribution.
+Segment Mapping Requirements
+The High Net Worth segment requires special handling. The BRD indicates that High Net
+Worth is anchored at Decile  rather than a strict fourth quartile because agents serving
+high-net-worth markets write larger cases by nature. The range ceiling is the actual th
+percentile of the  data, shown as approximately $,.[]
+Example
+Market Served Decile Mapping FYC Range Business
+Interpretation
+Mass Market D–D $1,839–$22,471
+Lower half of the
+retained distribution.
+Mid Market D–D $9,589–$30,872
+Centered on the
+population median.
+Affluent D–D $17,839–$53,504
+Upper-middle range of
+the retained
+distribution.
+High Net Worth D–D $30,917–$116,268
+Top three deciles,
+anchored above the
+population median.
+If a candidate selects Affluent as the Market Served, the system must use the Affluent
+segment range of approximately $, to $,. The candidate’s activity position
+will then determine where within that Affluent range the estimate lands.
+Acceptance Criteria
+Notes and Dependencies
+AC ID Given When Then
+US-AC
+The user selects Mass
+Market
+The estimate is
+calculated
+The system uses the
+D–D range of
+$,–$, as the
+segment boundaries.
+US-AC
+The user selects Mid
+Market
+The estimate is
+calculated
+The system uses the
+D–D range of
+$,–$, as the
+segment boundaries.
+US-AC
+The user selects
+Affluent
+The estimate is
+calculated
+The system uses the
+D–D range of
+$,–$, as
+the segment
+boundaries.
+US-AC
+The user selects High
+Net Worth
+The estimate is
+calculated
+The system uses the
+D–D range of
+$,–$, as
+the segment
+boundaries.
+US-AC
+Adjacent market
+segments overlap
+The user compares
+segment ranges
+The system preserves
+the approved
+overlapping segment
+ranges and does not
+force mutually
+exclusive nonoverlapping ranges.
+US-AC
+The market mapping
+table is pending
+Legal/OGC
+confirmation
+The tool is prepared
+for candidate-facing
+use
+The implementation
+must flag this
+mapping as requiring
+approval before final
+production release.
+The market mapping logic is one of the explicit open Legal/OGC review items. Product and
+compliance stakeholders should confirm the candidate-facing labels and whether the
+ranges should be displayed exactly, rounded, or formatted as broader bands.
+US- — Calculate Base First-Year Income Estimate
+User Story
+As the system, I want to calculate a first-year income estimate from the selected market
+segment and activity inputs so that the candidate receives a bounded, historically traceable
+income range.
+Description
+This story covers the core calculation engine. The calculation has two major steps. First, the
+selected Market Served determines the candidate’s segment minimum and segment
+maximum. Second, the candidate’s activity inputs determine the candidate’s position
+within that segment range.
+The activity calculation uses Appointments Kept per Week and Working Weeks per Year.
+Appointment position is calculated by linear interpolation between benchmark anchor
+points. Working weeks are then applied as a proportional scalar, calculated as Working
+Weeks divided by . The final activity position is Appointment Position multiplied by the
+Working Weeks scalar.[]
+Calculation Rules
+Calculation Component Rule
+Appointment floor
+ appointment per week maps to activity
+position ..
+Population average anchor
+. appointments per week maps to activity
+position ..
+Top % anchor
+. appointments per week maps to activity
+position ..
+Appointment ceiling
+ appointments per week maps to activity
+position ..
+Appointment interpolation
+Any value between anchors is calculated
+proportionally between the two surrounding
+anchor points.
+Example
+A candidate selects Mid Market, enters  working weeks, and expects  appointments
+per week. The system identifies the Mid Market segment range, calculates the appointment
+position by interpolating between the . and . appointment benchmarks, applies the
+/ working week scalar, and produces a displayed range. The BRD’s illustrated
+example for this scenario shows annual appointments of , activity position of ., and
+estimated range of approximately $,–$,.[]
+Acceptance Criteria
+Working weeks scalar Working Weeks ÷ .
+Final activity position
+Appointment Position × Working Weeks
+Scalar.
+Point estimate
+Segment Minimum + (Activity Position ×
+Segment Spread).
+Displayed range low
+max(Segment Minimum, Point Estimate − .
+× Segment Spread).
+Displayed range high
+min(Segment Maximum, Point Estimate + .
+× Segment Spread).
+AC ID Given When Then
+US-AC
+A valid Market Served
+selection exists
+The calculation starts
+The system retrieves
+the correct segment
+minimum, maximum,
+and spread.
+US-AC
+Appointments Kept
+per Week equals
+Appointment position
+is calculated
+The system returns
+appointment position
+..
+US-AC
+Appointments Kept
+per Week equals .
+Appointment position
+is calculated
+The system returns
+appointment position
+. before applying
+the weeks scalar.
+US-AC
+Appointments Kept
+per Week equals .
+Appointment position
+is calculated
+The system returns
+appointment position
+. before applying
+the weeks scalar.
+Notes and Dependencies
+The screenshots provide the calculation formula and benchmark anchors, but engineering
+should confirm numeric rounding rules for activity position, annual appointments, point
+estimate, and displayed currency values. The BRD examples appear rounded for candidatefacing display.
+US- — Present Results and Sensitivity Scenarios
+US-AC
+Appointments Kept
+per Week equals
+Appointment position
+is calculated
+The system returns
+appointment position
+. before applying
+the weeks scalar.
+US-AC
+Appointments Kept
+per Week falls
+between two
+benchmark anchors
+Appointment position
+is calculated
+The system uses linear
+interpolation between
+the two surrounding
+benchmark positions.
+US-AC
+Working Weeks per
+Year is provided
+Activity position is
+calculated
+The system multiplies
+appointment position
+by Working Weeks
+divided by .
+US-AC
+Activity position and
+segment range are
+available
+Point estimate is
+calculated
+The system applies
+Segment Minimum +
+(Activity Position ×
+Segment Spread).
+US-AC
+The displayed range is
+calculated
+The lower or upper
+bound exceeds
+segment boundaries
+The system floors the
+low value at the
+segment minimum
+and caps the high
+value at the segment
+maximum.
+US-AC
+The calculation
+produces an output
+The result is displayed
+The result must be a
+range, not only a
+single number.
+US-AC
+Any calculation input
+is invalid or missing
+The calculation is
+requested
+The system does not
+calculate and returns a
+clear validation
+message.
+User Story
+As a prospective candidate or recruiter, I want to see the estimated income range and
+optional scenario adjustments so that I can understand how activity changes may influence
+the estimate without confusing those scenarios with guaranteed outcomes.
+Description
+This story covers the results screen. The BRD states that the output should be shown as a
+range, not a single number. It also describes two optional candidate-facing adjustments on
+the results screen: Make One More Sale Weekly and % Conversion Increase. These are
+not separate primary inputs; they are sensitivity levers shown after the base estimate has
+been calculated.[]
+The results screen should clearly distinguish the base estimate from sensitivity scenarios.
+Because the source document is pending OGC review, the language, placement, and
+labeling of these scenario constructs must be controlled carefully before candidate-facing
+release.
+Results and Scenario Requirements
+Result Element Requirement Candidate-Facing
+Interpretation
+Base estimated range
+Display the calculated low and
+high estimate.
+Candidate sees a bounded
+estimate derived from their
+selected market and activity
+assumptions.
+Annual appointments
+Display or make available
+annual appointments when
+appropriate.
+Candidate can understand how
+weekly appointments translate
+into annual activity.
+Activity position
+Display internally or optionally
+on screen depending on design.
+Recruiter or system can explain
+how activity influences
+placement within the range.
+Make One More Sale Weekly
+Recalculate assuming one
+additional appointment per
+week above stated input.
+Candidate sees the potential
+estimate effect of increased
+weekly activity.
+% Conversion Increase
+Model a % improvement in
+activity-to-income position
+within the segment range.
+Candidate sees a scenario
+reflecting improved conversion
+or productivity.
+Disclaimer language Display that results are
+estimates and not income
+Candidate understands that
+actual results depend on
+Example
+A candidate receives a base estimate of $,–$, for a Mid Market scenario. The
+recruiter can toggle Make One More Sale Weekly to show how the estimate changes if the
+candidate keeps one additional appointment per week. The recruiter can also toggle %
+Conversion Increase to model improved activity-to-income positioning. The screen should
+make clear that these are sensitivity scenarios, not promises or guaranteed compensation
+outcomes.
+Acceptance Criteria
+guarantees. individual performance and
+external factors.
+AC ID Given When Then
+US-AC
+A base estimate has
+been calculated
+The results screen
+loads
+The system displays
+the estimated income
+range clearly and
+prominently.
+US-AC
+The base estimate is
+displayed
+The candidate views
+the result
+The system presents
+the result as a range
+and not as a
+guaranteed single
+income figure.
+US-AC
+The user toggles Make
+One More Sale Weekly
+The scenario is applied
+The system
+recalculates using one
+additional
+appointment per week
+above the
+candidate’s stated
+appointment input,
+subject to applicable
+caps.
+US-AC
+The user toggles %
+Conversion Increase
+The scenario is applied
+The system models a
+% improvement in
+activity-to-income
+position within the
+selected segment
+range.
+Notes and Dependencies
+The Make One More Sale Weekly construct and % Conversion Increase construct are
+both open OGC items. The implementation should support the calculation capability, but
+the final screen labels, explanatory copy, and placement should remain configurable until
+approved.
+US- — Maintain Data Foundation, Assumptions, and
+Compliance Traceability
+User Story
+As a product owner, Legal/OGC reviewer, or system administrator, I want the tool’s
+assumptions, data sources, and calculation outputs to be traceable and controlled so that
+the candidate-facing estimate remains auditable, compliant, and aligned with approved
+methodology.
+Description
+This story covers the governance layer behind the candidate experience. The BRD relies on
+internal  agent performance records, with the population limited to First-Year Prior
+US-AC
+A sensitivity scenario
+is active
+The result is shown
+The system clearly
+labels the output as a
+scenario or sensitivity
+view and distinguishes
+it from the base
+estimate.
+US-AC
+The candidate views
+any result
+The result is displayed
+The system includes
+disclaimer language
+indicating that
+outputs are
+hypothetical estimates
+and not guarantees of
+income.
+US-AC
+Legal/OGC has not
+approved scenario
+wording
+The release is being
+prepared
+The system must not
+publish final
+candidate-facing
+language for these
+constructs without
+required approval.
+agents active through their th month. PEA agents are excluded, and the top and bottom
+% of agents by FYC are removed before analysis. The retained sample size is shown as N =
+,, representing the middle % of the  P agent class. A parallel  dataset was
+used as a reference check on key distributions.[]
+The governance layer should preserve the source tables, calculation parameters, validation
+status, and open Legal/OGC items. It should also ensure the tool cannot generate values
+outside the historical bounds defined by the approved population and segment ranges.
+Data and Governance Requirements
+Governance Area Requirement Implementation Expectation
+Source population
+Use  internal P agent
+records active through month
+.
+Data version should be
+documented and reproducible.
+Exclusions
+Exclude PEA agents and
+remove top/bottom % FYC
+outliers.
+Filtering logic should be
+documented and testable.
+Final sample size
+Preserve the post-filter sample
+size of N = , for the
+methodology.
+Any future refresh must record
+new sample sizes and approval
+status.
+Verification dataset
+Maintain reference to
+dataset check.
+Comparison should be retained
+for auditability where available.
+Segment ranges
+Store approved decile and
+segment tables.
+Calculations should read from
+controlled configuration rather
+than hard-coded unreviewed
+values.
+Activity benchmarks
+Store appointment anchor
+points and working weeks
+scalar rule.
+Changes should require
+versioning and review.
+Output band
+Store ±% of segment spread
+banding rule.
+OGC must confirm whether this
+band remains appropriate.
+Growth and persistency
+assumptions
+Preserve annual growth and
+% persistency assumptions if
+used in broader modeling.
+These assumptions should not
+affect first-year base estimate
+unless explicitly implemented.
+Open OGC items
+Track unresolved items before
+production release.
+Release readiness should
+depend on required approvals.
+Example
+A product owner updates the market segment table after Legal/OGC approval. The system
+stores the new version, effective date, approver, and rationale. All future estimates use the
+approved configuration, while prior estimates remain traceable to the version that
+produced them.
+Acceptance Criteria
+AC ID Given When Then
+US-AC
+The calculation
+configuration is
+reviewed
+A stakeholder inspects
+the tool methodology
+The system or
+supporting
+documentation
+identifies the source
+data year, population
+definition, exclusions,
+and final sample size.
+US-AC
+A calculation result is
+generated
+An audit review is
+performed
+The result can be
+traced to the market
+segment range,
+activity benchmarks,
+and calculation
+formula used at the
+time of generation.
+US-AC
+A calculated value
+would exceed a
+segment boundary
+The displayed range is
+produced
+The system floors or
+caps the displayed
+range at the approved
+segment boundaries.
+US-AC
+A future data refresh is
+introduced
+Configuration is
+updated
+The system stores the
+new data version and
+does not overwrite
+historical
+methodology without
+version control.
+US-AC
+OGC review items
+remain unresolved
+Production release is
+assessed
+The system or release
+checklist identifies
+unresolved approvals
+for sensitivity
+constructs, market
+served table, and
+output band.
+Notes and Dependencies
+The source BRD includes an annual growth rate section and a % persistency assumption.
+Based on the visible screenshots, those assumptions appear relevant to broader modeling
+or future-year projections, while the primary first-year estimate is driven by market
+segment and activity inputs. If the product scope includes multi-year projections, an
+additional user story should be added for future-year income modeling.
+. Cross-Story Business Rules
+The following business rules apply across multiple stories and should be treated as shared
+implementation rules rather than isolated screen requirements.
+US-AC
+Growth rate or
+persistency
+assumptions are
+displayed or used
+A stakeholder reviews
+calculations
+The system
+distinguishes
+assumptions used for
+first-year estimate
+calculation from
+assumptions used
+only for broader
+modeling or context.
+US-AC
+The tool is used in a
+recruiting conversation
+Candidate-facing
+output is shown
+The result includes
+appropriate
+disclaimer language
+stating that outputs
+are hypothetical
+estimates and not
+guarantees.
+Rule ID Business Rule Applies To
+BR-
+Outputs must be hypothetical
+estimates and must not be
+presented as guaranteed
+income.
+US-, US-
+BR-
+The tool must produce a range,
+not only a single number.
+US-, US-
+BR-
+Market Served determines the
+segment minimum and
+maximum FYC range.
+US-, US-
+. Open Questions and Release Dependencies
+The BRD identifies several items requiring additional input from subject matter experts or
+OGC before the methodology can be considered final. These items should be tracked as
+formal release dependencies rather than informal notes.
+BR-
+Appointments Kept per Week
+must be mapped to activity
+position using approved
+benchmark anchors and
+interpolation.
+US-
+BR-
+Working Weeks per Year must
+be applied as Working Weeks
+divided by .
+US-
+BR-
+Displayed range must use
+±% of segment spread
+around point estimate,
+bounded by segment minimum
+and maximum.
+US-, US-
+BR-
+Candidate-facing sensitivity
+levers must be treated as postcalculation scenarios, not
+primary intake inputs.
+US-
+BR-
+The tool must remain traceable
+to the approved historical data
+population and methodology
+version.
+US-
+BR-
+Open OGC review items must
+be resolved before final
+candidate-facing production
+use.
+US-, US-, US-
+Open Item Impacted Story Required Decision
+Make One More Sale Weekly
+construct
+US-
+OGC must validate framing,
+placement, and labeling on the
+results screen.
+% Conversion Increase
+construct
+US-
+OGC must validate framing,
+basis, and presentation.
+. Recommended Backlog Structure
+For implementation purposes, the five user stories can be decomposed into smaller
+engineering tasks without changing the business-level story structure. The recommended
+backlog sequencing is to build the intake form first, then the market mapping
+configuration, then the calculation engine, then the results experience, and finally the
+governance and audit controls needed for release.
+Market Served table US-
+OGC must confirm quartile-tosegment mapping and
+associated income ranges for
+candidate-facing use.
+±% output band US-, US-
+OGC must confirm whether the
+displayed variability band is
+appropriately sized or should
+be changed.
+Annual growth rate table Potential future story
+Product must confirm whether
+future-year projections are in
+scope or contextual only.
+Persistency assumption Potential future story
+Product must confirm whether
+% persistency is shown or
+used in calculations beyond
+first-year estimates.
+Sequence Backlog Item Related Story Suggested Owner
+
+Build candidate input
+form and validation
+US- UX / Frontend / BA
+
+Configure market
+segment table and
+ranges
+US-
+Product / Backend /
+Data
+
+Implement activity
+position and income
+range calculation
+US- Backend / QA
+
+Build results screen
+with base estimate
+US- UX / Frontend
+
+Add scenario toggles
+as configurable
+sensitivity views
+US-
+Product / Frontend /
+Backend
+. Suggested Additional User Story If Multi-Year Modeling
+Is Required
+The visible BRD includes annual growth rate and persistency assumption sections. If the
+product scope includes future-year income projections, the following additional story
+should be added. If the current product is limited to first-year estimates, this story can
+remain out of scope.
+. Final Consolidated Acceptance Summary
+The solution should be accepted when a recruiter can enter a candidate’s profile and
+activity assumptions, select the intended market, generate a historically bounded first-year
+income range, optionally view clearly labeled post-calculation scenarios, and provide the
+candidate with a compliant explanation that the estimate is hypothetical. The underlying
+system must preserve the approved segment ranges, calculation formulas, data population
+assumptions, and OGC review status so that every displayed value is explainable and
+auditable.
+
+Add disclaimer,
+approval controls, and
+methodology
+versioning
+US-
+Product / Compliance
+/ Engineering
+
+Complete OGC review
+and lock candidatefacing language
+US-, US-, US- Legal/OGC / Product
+Story ID User Story Description Acceptance Summary
+US-
+As a candidate, I want
+to view future-year
+projection scenarios
+so that I can
+understand how
+income may grow over
+time under approved
+assumptions.
+This would use the
+annual growth rate
+methodology and %
+persistency
+assumption if
+approved for
+candidate-facing use.
+The system must
+clearly distinguish
+future projections
+from first-year
+estimates, apply
+approved growth and
+persistency
+assumptions, and
+include disclaimer
+language.
+References
+[]: User-provided screenshots of “Income Estimation Tool: Methodology & Data
+Documentation,” Version ., Draft for Legal/OGC Review, as of May , .
