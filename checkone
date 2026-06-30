@@ -1,63 +1,458 @@
-Build a full-featured collaborative online whiteboard application inspired by Excalidraw. The application should provide an infinite canvas where users can create hand-drawn-style diagrams, sketches, wireframes, flowcharts, visual notes, and brainstorming boards. Do not copy Excalidraw’s branding, logo, name, proprietary assets, or exact UI styling; instead, create an original but familiar whiteboard experience with comparable functionality.
 
-The app should include an infinite pan-and-zoom canvas with smooth performance. Users must be able to pan using a hand tool, mouse drag, trackpad gestures, or spacebar-drag behavior. The canvas should support zoom in, zoom out, reset zoom, zoom-to-fit, and viewport navigation. Add optional grid mode, background color selection, and light/dark/system theme support.
 
-Implement a drawing toolbar with these tools: selection, hand/pan, rectangle, diamond, ellipse, arrow, straight line, freehand pencil, text, image insertion, eraser, and a “more tools” menu. Each tool should have intuitive keyboard shortcuts similar to common whiteboard tools, including number-key shortcuts and letter shortcuts. The selected tool should optionally remain active through a lock-tool toggle.
+Share
+Main requirement Python code - without any third party libraries . Create a program that can randomly move mouse pointer every minute and let’s say if user is not moving the mouse in 20 mins it should open notepad and type random words with spaces and then after 10 mins do alt tab and open a new notepad and do the same thing till user move the mouse or open some other application or type something
+Got it — I’ll provide a standard-library-only Python approach for detecting user inactivity, moving the mouse periodically, and stopping once real user activity resumes.
+Done. I created a Windows-only, standard-library-only Python script that uses ctypes Win32 APIs, subprocess, random, and other built-in modules only. It was syntax-checked successfully in the sandbox, but full runtime testing must be done on Windows because it depends on Notepad and Win32 desktop APIs.
+Run it on Windows with:
+Bash
+python mouse_notepad_idle.py
+The script stops on real mouse movement, real keyboard input, Ctrl+C, or an external foreground application/window change. Please use it only on a machine you own or administer and in accordance with applicable workplace or system policies.
+mouse_notepad_idle.py
+Code · 14.41 KB
+View all files in this task
+Task completed
+How was this result?
 
-Create a robust scene model where every canvas object is represented as editable JSON. Supported element types should include rectangles, diamonds, ellipses, arrows, lines, freehand strokes, text blocks, images, frames, and groups. Each element should store position, size, rotation, z-index, style, opacity, roughness/sloppiness, stroke color, background color, fill style, stroke width, stroke style, text properties, links, metadata, and version history fields required for collaboration.
 
-Use a hand-drawn rendering style. Shapes should look naturally sketched rather than perfectly digital. Provide configurable style options including stroke color, background/fill color, transparent fill, hachure or sketch-style fill, solid fill, stroke width, solid/dashed/dotted stroke style, roughness/sloppiness, rounded corners, opacity, and edge style. Text should support font family choices such as handwritten, normal sans-serif, and monospace/code style, along with font size, color, alignment, and resizing.
+Outlook Mail
 
-Implement full object selection and editing. Users should be able to select one or multiple elements, drag them, resize them using handles, rotate them, duplicate them, delete them, group and ungroup them, lock/unlock them, align them, distribute them, reorder layers, bring forward, send backward, bring to front, and send to back. Add context menus for common actions. Support copy, paste, cut, undo, redo, and keyboard-driven editing.
 
-Add smart arrows and connectors. Arrows should be editable, support different start/end arrowheads, connect visually to shapes, and update when connected shapes move. Support straight and elbow-style connectors if possible. Allow users to add labels or bound text to shapes and connectors.
+Manus is an AI Agent and can make mistakes. Please double-check before use.
 
-Implement text editing directly on the canvas. Users should be able to click to create text, drag to create a text box, double-click to edit existing text, resize text boxes, bind text to shapes, unbind text, and add clickable links to text or elements.
+mouse_notepad_idle.py
+"""
+mouse_notepad_idle.py
 
-Support image insertion. Users should be able to upload PNG, JPG, SVG, and WebP files, paste images from the clipboard, drag-and-drop images onto the canvas, resize images, crop or fit them if practical, and preserve image assets when saving or exporting the scene.
+Windows-only, standard-library-only Python script.
 
-Create a reusable library system. Users should be able to save selected elements as reusable components, browse local libraries, insert library items into the canvas, import/export library files, and manage custom library collections. The library should work locally without requiring an account.
+Behavior:
+  * Watches for real user activity using low-level keyboard/mouse hooks.
+  * Randomly moves the mouse pointer once per minute while the user is idle.
+  * If the user remains inactive for 20 minutes, opens Notepad and types random words.
+  * Every 10 minutes after typing starts, performs Alt+Tab, opens a new Notepad, and types again.
+  * Stops immediately when the real user moves the mouse, clicks, scrolls, types, or changes to
+    another foreground application/window.
 
-Implement local-first persistence. The app should automatically save the current scene to browser storage and warn users that browser storage may be cleared. Users must be able to save their work as an editable project file, such as `.whiteboard` or `.json`, and later load it back with all elements remaining editable. Include autosave, manual save, load from file, and clear scene features.
+Important:
+  * This script is for personal/local automation on a Windows machine you control.
+  * It uses only Python's standard library: ctypes, subprocess, random, time, etc.
+  * It does not install anything, persist itself, hide itself, or bypass permissions.
+"""
 
-Add export functionality. Users should be able to export the full canvas or selected objects as PNG, SVG, and JSON. Export settings should include transparent background, padding, scale factor, include/exclude background, dark/light export mode, and copy-to-clipboard where supported. Ensure exported SVG and PNG preserve the hand-drawn style.
+from __future__ import annotations
 
-Implement real-time collaboration. Users should be able to create a collaborative room, share a link, and edit the same canvas with other users in real time. Show live cursors, user names or anonymous labels, presence indicators, and conflict-free synchronized updates. Collaboration should support encrypted room links or end-to-end encryption if feasible, so only people with the shared link can access the scene. The app should not require login for basic collaboration.
+import ctypes
+import ctypes.wintypes as wt
+import os
+import random
+import string
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from typing import Optional
 
-Add a command palette and help system. Users should be able to press a shortcut such as Ctrl/Cmd+/ to open a command palette for searching actions, tools, settings, and scene commands. Provide a keyboard shortcuts modal accessible with `?`. Include search within the scene by text content.
 
-Design a clean, minimal interface. The UI should include a top-centered drawing toolbar, a left or contextual style panel when elements are selected, bottom-left zoom and undo/redo controls, a top-left menu for file/canvas actions, and a top-right share/collaboration button. The interface should be responsive and usable on desktop and tablets.
+# -----------------------------------------------------------------------------
+# User-adjustable settings
+# -----------------------------------------------------------------------------
 
-The application should include these menus and panels: file menu, canvas settings menu, contextual element style panel, layer/actions panel, library panel, collaboration/share dialog, export dialog, keyboard shortcuts modal, command palette, and context menu.
+MOUSE_MOVE_EVERY_SECONDS = 60          # Move mouse once per minute while idle
+START_TYPING_AFTER_SECONDS = 20 * 60   # Open/type in Notepad after 20 minutes idle
+NEW_NOTEPAD_EVERY_SECONDS = 10 * 60    # After typing starts, open a new Notepad every 10 minutes
+TYPE_WORDS_PER_BATCH = 80              # Number of random words typed per Notepad window
+MAIN_LOOP_SLEEP_SECONDS = 0.25         # Polling interval
 
-Implement accessibility and usability features. Provide keyboard navigation where possible, ARIA labels for controls, high-contrast modes, focus states, touch-friendly controls, clipboard support, drag-and-drop support, and clear error messages.
+# Small random movement range. Keep it modest so the pointer does not jump far.
+MOUSE_JITTER_PIXELS_MIN = 8
+MOUSE_JITTER_PIXELS_MAX = 35
 
-Use a modern technical stack. Prefer React with TypeScript for the frontend, a canvas/SVG rendering layer suitable for interactive drawing, Zustand or another lightweight state manager, localStorage/IndexedDB for local persistence, WebSockets or WebRTC for collaboration, and a backend such as Node.js with Express/Fastify or a serverless equivalent for room signaling and collaboration state. Keep the architecture modular so the canvas engine, rendering, tools, collaboration, persistence, and export systems are separated.
+# If True, the program exits when the foreground window changes to something the
+# script did not open itself. This implements: "or open some other application".
+STOP_ON_EXTERNAL_FOREGROUND_CHANGE = True
 
-Suggested modules:
 
-1. Canvas engine: viewport, zoom, pan, hit testing, selection, snapping, object transforms.
-2. Element model: shape schemas, serialization, versioning, z-index, groups, assets.
-3. Rendering engine: rough hand-drawn rendering, text rendering, image rendering, overlays.
-4. Tool controller: selection, shapes, pencil, text, image, eraser, connector tools.
-5. Style system: colors, fills, strokes, fonts, opacity, theme, background.
-6. Persistence: autosave, save file, load file, IndexedDB/localStorage.
-7. Export system: PNG, SVG, JSON, clipboard export.
-8. Collaboration: shared rooms, live cursors, conflict handling, encrypted scene updates.
-9. Library system: reusable components, import/export libraries.
-10. UI shell: toolbar, panels, menus, modals, shortcuts, command palette.
+# -----------------------------------------------------------------------------
+# Windows constants and ctypes setup
+# -----------------------------------------------------------------------------
 
-Acceptance criteria:
+if os.name != "nt":
+    raise SystemExit("This script is Windows-only because it uses Notepad and Win32 APIs.")
 
-- A user can open the app and draw shapes, arrows, text, freehand strokes, and images on an infinite canvas.
-- All elements are editable after creation.
-- The user can style objects with stroke, fill, roughness, opacity, font, and line options.
-- The user can select, move, resize, rotate, group, duplicate, delete, and reorder objects.
-- The user can save and reload an editable scene file.
-- The user can export PNG, SVG, and JSON.
-- The user can collaborate in real time through a shareable room link.
-- The user can use keyboard shortcuts, undo/redo, zoom controls, and a command palette.
-- The app works without login for core local drawing features.
-- The app has an original brand and UI while providing functionality comparable to a modern collaborative sketch whiteboard.
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-Focus on creating a production-quality MVP first, then progressively add advanced features such as encrypted collaboration, library marketplace, presentation frames, cloud workspaces, comments, version history, advanced snapping, and AI-assisted diagram generation.
+WH_KEYBOARD_LL = 13
+WH_MOUSE_LL = 14
+HC_ACTION = 0
+WM_KEYDOWN = 0x0100
+WM_SYSKEYDOWN = 0x0104
+WM_MOUSEMOVE = 0x0200
+WM_LBUTTONDOWN = 0x0201
+WM_RBUTTONDOWN = 0x0204
+WM_MBUTTONDOWN = 0x0207
+WM_MOUSEWHEEL = 0x020A
+WM_XBUTTONDOWN = 0x020B
+
+LLKHF_INJECTED = 0x00000010
+LLMHF_INJECTED = 0x00000001
+
+INPUT_MOUSE = 0
+INPUT_KEYBOARD = 1
+KEYEVENTF_KEYUP = 0x0002
+MOUSEEVENTF_MOVE = 0x0001
+
+VK_MENU = 0x12       # Alt
+VK_TAB = 0x09
+VK_SPACE = 0x20
+VK_RETURN = 0x0D
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+GW_OWNER = 4
+
+
+class POINT(ctypes.Structure):
+    _fields_ = [("x", wt.LONG), ("y", wt.LONG)]
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wt.UINT), ("dwTime", wt.DWORD)]
+
+
+class MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("pt", POINT),
+        ("mouseData", wt.DWORD),
+        ("flags", wt.DWORD),
+        ("time", wt.DWORD),
+        ("dwExtraInfo", wt.ULONG_PTR),
+    ]
+
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("vkCode", wt.DWORD),
+        ("scanCode", wt.DWORD),
+        ("flags", wt.DWORD),
+        ("time", wt.DWORD),
+        ("dwExtraInfo", wt.ULONG_PTR),
+    ]
+
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = [
+        ("dx", wt.LONG),
+        ("dy", wt.LONG),
+        ("mouseData", wt.DWORD),
+        ("dwFlags", wt.DWORD),
+        ("time", wt.DWORD),
+        ("dwExtraInfo", wt.ULONG_PTR),
+    ]
+
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wt.WORD),
+        ("wScan", wt.WORD),
+        ("dwFlags", wt.DWORD),
+        ("time", wt.DWORD),
+        ("dwExtraInfo", wt.ULONG_PTR),
+    ]
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = [("uMsg", wt.DWORD), ("wParamL", wt.WORD), ("wParamH", wt.WORD)]
+
+
+class INPUT_UNION(ctypes.Union):
+    _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
+
+
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", wt.DWORD), ("union", INPUT_UNION)]
+
+
+LowLevelProc = ctypes.WINFUNCTYPE(wt.LPARAM, ctypes.c_int, wt.WPARAM, wt.LPARAM)
+
+# Function signatures
+user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+user32.GetLastInputInfo.restype = wt.BOOL
+user32.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
+user32.GetCursorPos.restype = wt.BOOL
+user32.SetWindowsHookExW.argtypes = [ctypes.c_int, LowLevelProc, wt.HINSTANCE, wt.DWORD]
+user32.SetWindowsHookExW.restype = wt.HHOOK
+user32.UnhookWindowsHookEx.argtypes = [wt.HHOOK]
+user32.UnhookWindowsHookEx.restype = wt.BOOL
+user32.CallNextHookEx.argtypes = [wt.HHOOK, ctypes.c_int, wt.WPARAM, wt.LPARAM]
+user32.CallNextHookEx.restype = wt.LPARAM
+user32.PeekMessageW.argtypes = [ctypes.POINTER(wt.MSG), wt.HWND, wt.UINT, wt.UINT, wt.UINT]
+user32.PeekMessageW.restype = wt.BOOL
+user32.TranslateMessage.argtypes = [ctypes.POINTER(wt.MSG)]
+user32.DispatchMessageW.argtypes = [ctypes.POINTER(wt.MSG)]
+user32.SendInput.argtypes = [wt.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+user32.SendInput.restype = wt.UINT
+user32.GetForegroundWindow.argtypes = []
+user32.GetForegroundWindow.restype = wt.HWND
+user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
+user32.GetWindowThreadProcessId.restype = wt.DWORD
+user32.GetWindow.argtypes = [wt.HWND, wt.UINT]
+user32.GetWindow.restype = wt.HWND
+kernel32.GetTickCount64.argtypes = []
+kernel32.GetTickCount64.restype = ctypes.c_ulonglong
+
+
+@dataclass
+class NotepadWindow:
+    process: subprocess.Popen
+    hwnd: Optional[int] = None
+
+
+class RealUserActivityMonitor:
+    """Detects non-injected mouse/keyboard activity via low-level Win32 hooks."""
+
+    def __init__(self) -> None:
+        self.real_activity_detected = False
+        self.reason = ""
+        self._mouse_hook = None
+        self._keyboard_hook = None
+        self._mouse_proc = LowLevelProc(self._mouse_callback)
+        self._keyboard_proc = LowLevelProc(self._keyboard_callback)
+
+    def install(self) -> None:
+        self._mouse_hook = user32.SetWindowsHookExW(WH_MOUSE_LL, self._mouse_proc, None, 0)
+        if not self._mouse_hook:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self._keyboard_hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, self._keyboard_proc, None, 0)
+        if not self._keyboard_hook:
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def uninstall(self) -> None:
+        if self._mouse_hook:
+            user32.UnhookWindowsHookEx(self._mouse_hook)
+            self._mouse_hook = None
+        if self._keyboard_hook:
+            user32.UnhookWindowsHookEx(self._keyboard_hook)
+            self._keyboard_hook = None
+
+    def pump_messages(self) -> None:
+        msg = wt.MSG()
+        while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+    def _mouse_callback(self, nCode: int, wParam: int, lParam: int) -> int:
+        if nCode == HC_ACTION:
+            event = ctypes.cast(lParam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+            if not (event.flags & LLMHF_INJECTED):
+                if wParam in {
+                    WM_MOUSEMOVE,
+                    WM_LBUTTONDOWN,
+                    WM_RBUTTONDOWN,
+                    WM_MBUTTONDOWN,
+                    WM_MOUSEWHEEL,
+                    WM_XBUTTONDOWN,
+                }:
+                    self.real_activity_detected = True
+                    self.reason = "real mouse activity"
+        return user32.CallNextHookEx(self._mouse_hook, nCode, wParam, lParam)
+
+    def _keyboard_callback(self, nCode: int, wParam: int, lParam: int) -> int:
+        if nCode == HC_ACTION:
+            event = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+            if not (event.flags & LLKHF_INJECTED):
+                if wParam in {WM_KEYDOWN, WM_SYSKEYDOWN}:
+                    self.real_activity_detected = True
+                    self.reason = "real keyboard activity"
+        return user32.CallNextHookEx(self._keyboard_hook, nCode, wParam, lParam)
+
+
+def get_idle_seconds() -> float:
+    info = LASTINPUTINFO()
+    info.cbSize = ctypes.sizeof(LASTINPUTINFO)
+    if not user32.GetLastInputInfo(ctypes.byref(info)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    elapsed_ms = kernel32.GetTickCount64() - info.dwTime
+    return elapsed_ms / 1000.0
+
+
+def send_inputs(items: list[INPUT]) -> None:
+    if not items:
+        return
+    array_type = INPUT * len(items)
+    sent = user32.SendInput(len(items), array_type(*items), ctypes.sizeof(INPUT))
+    if sent != len(items):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def make_mouse_move(dx: int, dy: int) -> INPUT:
+    inp = INPUT()
+    inp.type = INPUT_MOUSE
+    inp.union.mi = MOUSEINPUT(dx, dy, 0, MOUSEEVENTF_MOVE, 0, 0)
+    return inp
+
+
+def key_input(vk: int, key_up: bool = False) -> INPUT:
+    inp = INPUT()
+    inp.type = INPUT_KEYBOARD
+    flags = KEYEVENTF_KEYUP if key_up else 0
+    inp.union.ki = KEYBDINPUT(vk, 0, flags, 0, 0)
+    return inp
+
+
+def press_key(vk: int) -> None:
+    send_inputs([key_input(vk), key_input(vk, True)])
+
+
+def press_alt_tab() -> None:
+    send_inputs([
+        key_input(VK_MENU),
+        key_input(VK_TAB),
+        key_input(VK_TAB, True),
+        key_input(VK_MENU, True),
+    ])
+    time.sleep(0.5)
+
+
+def random_mouse_jitter() -> None:
+    dx = random.randint(MOUSE_JITTER_PIXELS_MIN, MOUSE_JITTER_PIXELS_MAX) * random.choice([-1, 1])
+    dy = random.randint(MOUSE_JITTER_PIXELS_MIN, MOUSE_JITTER_PIXELS_MAX) * random.choice([-1, 1])
+    send_inputs([make_mouse_move(dx, dy)])
+
+
+def random_word(min_len: int = 3, max_len: int = 9) -> str:
+    length = random.randint(min_len, max_len)
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(length))
+
+
+def random_text(word_count: int) -> str:
+    words = [random_word() for _ in range(word_count)]
+    # Include spaces as requested, plus occasional line breaks to keep Notepad readable.
+    chunks = []
+    for i, word in enumerate(words, start=1):
+        chunks.append(word)
+        chunks.append("\n" if i % random.randint(8, 14) == 0 else " ")
+    return "".join(chunks)
+
+
+def type_text_unicode(text: str, delay_min: float = 0.01, delay_max: float = 0.06) -> None:
+    """Type text with SendInput using Unicode scan codes, no third-party libraries."""
+    for ch in text:
+        code = ord(ch)
+        down = INPUT()
+        down.type = INPUT_KEYBOARD
+        down.union.ki = KEYBDINPUT(0, code, 0x0004, 0, 0)  # KEYEVENTF_UNICODE
+
+        up = INPUT()
+        up.type = INPUT_KEYBOARD
+        up.union.ki = KEYBDINPUT(0, code, 0x0004 | KEYEVENTF_KEYUP, 0, 0)
+
+        send_inputs([down, up])
+        time.sleep(random.uniform(delay_min, delay_max))
+
+
+def foreground_hwnd() -> int:
+    return int(user32.GetForegroundWindow() or 0)
+
+
+def foreground_pid() -> int:
+    hwnd = foreground_hwnd()
+    if not hwnd:
+        return 0
+    pid = wt.DWORD(0)
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return int(pid.value)
+
+
+def wait_for_foreground_pid(pid: int, timeout_seconds: float = 8.0) -> Optional[int]:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        hwnd = foreground_hwnd()
+        if hwnd and foreground_pid() == pid:
+            return hwnd
+        time.sleep(0.1)
+    return None
+
+
+def open_notepad_and_type() -> NotepadWindow:
+    proc = subprocess.Popen(["notepad.exe"])
+    hwnd = wait_for_foreground_pid(proc.pid)
+    if hwnd is None:
+        print("Warning: Notepad opened, but it did not become the foreground window quickly.")
+    time.sleep(0.5)
+    type_text_unicode(random_text(TYPE_WORDS_PER_BATCH))
+    return NotepadWindow(process=proc, hwnd=hwnd)
+
+
+def active_window_is_ours(owned_notepads: list[NotepadWindow]) -> bool:
+    pid = foreground_pid()
+    return any(np.process.poll() is None and np.process.pid == pid for np in owned_notepads)
+
+
+def stop_reason_for_external_foreground_change(owned_notepads: list[NotepadWindow], typing_started: bool) -> Optional[str]:
+    if not STOP_ON_EXTERNAL_FOREGROUND_CHANGE or not typing_started:
+        return None
+    if active_window_is_ours(owned_notepads):
+        return None
+    return "foreground application/window changed outside this script"
+
+
+def main() -> int:
+    print("Starting idle automation monitor. Press Ctrl+C to quit.")
+    print("The script will stop automatically on real mouse movement, keyboard input, or external app switch.")
+
+    monitor = RealUserActivityMonitor()
+    monitor.install()
+
+    owned_notepads: list[NotepadWindow] = []
+    last_mouse_move = time.monotonic()
+    typing_started = False
+    next_notepad_at: Optional[float] = None
+
+    try:
+        while True:
+            monitor.pump_messages()
+
+            if monitor.real_activity_detected:
+                print(f"Stopping because user activity was detected: {monitor.reason}.")
+                return 0
+
+            external_reason = stop_reason_for_external_foreground_change(owned_notepads, typing_started)
+            if external_reason:
+                print(f"Stopping because {external_reason}.")
+                return 0
+
+            now = time.monotonic()
+            idle = get_idle_seconds()
+
+            if now - last_mouse_move >= MOUSE_MOVE_EVERY_SECONDS:
+                random_mouse_jitter()
+                last_mouse_move = now
+                print(f"Moved mouse randomly after about {idle:.0f} seconds idle.")
+
+            if not typing_started and idle >= START_TYPING_AFTER_SECONDS:
+                print("20 minutes of inactivity reached. Opening Notepad and typing random words.")
+                owned_notepads.append(open_notepad_and_type())
+                typing_started = True
+                next_notepad_at = time.monotonic() + NEW_NOTEPAD_EVERY_SECONDS
+
+            elif typing_started and next_notepad_at is not None and now >= next_notepad_at:
+                print("10-minute cycle reached. Performing Alt+Tab, then opening a new Notepad.")
+                press_alt_tab()
+                time.sleep(0.5)
+                owned_notepads.append(open_notepad_and_type())
+                next_notepad_at = time.monotonic() + NEW_NOTEPAD_EVERY_SECONDS
+
+            time.sleep(MAIN_LOOP_SLEEP_SECONDS)
+
+    except KeyboardInterrupt:
+        print("Stopped by Ctrl+C.")
+        return 0
+    finally:
+        monitor.uninstall()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+Python Program for Mouse and Notepad Automation - Manus
