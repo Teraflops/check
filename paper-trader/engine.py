@@ -69,7 +69,8 @@ def entry_decision(report, entry_cfg, close, atr_value):
     """Return (ok, reason) for opening a long based on a signals.Report."""
     names = {s.name for s in report.fired}
     if entry_cfg.require_strong and not report.strong_setup:
-        return False, "no strong setup"
+        missing = [c for c in ("trend", "momentum", "volume") if not report.by_category[c]]
+        return False, "no strong setup: missing " + " and ".join(missing) + " signal" + ("s" if len(missing) > 1 else "")
     if report.score < entry_cfg.min_score:
         return False, f"score {report.score} < {entry_cfg.min_score}"
     if report.independent_confirmations < entry_cfg.min_independent:
@@ -101,6 +102,8 @@ class Position:
     risk_per_unit: float
     atr: float
     entry_reason: str = ""
+    entry_signals: list = field(default_factory=list)   # [{name, category, reason}] that justified the entry
+    target: float = 0.0               # full take-profit price, 0 if the exit profile has none
     tp1_done: bool = False
     highest: float = 0.0
     bars: int = 0
@@ -157,7 +160,7 @@ class Portfolio:
         return True, ""
 
     # ------------------------------------------------------------ trading
-    def open(self, product_id, now, price, atr_value, reason=""):
+    def open(self, product_id, now, price, atr_value, reason="", signals=None):
         ok, why = self.can_open(product_id)
         if not ok:
             return None, why
@@ -172,18 +175,19 @@ class Portfolio:
         cost = qty * fill * (1 + r.fee_rate)
         self.cash -= cost
         pos = Position(product_id, _iso(now), fill, qty, qty, fill - dist, fill - dist, dist, atr_value,
-                       entry_reason=reason, highest=fill, cost=cost)
+                       entry_reason=reason, entry_signals=list(signals or []), highest=fill, cost=cost,
+                       target=fill + e.fixed_tp_r * dist if e.fixed_tp_r else 0.0)
         self.positions[product_id] = pos
         self.marks[product_id] = price
         return pos, "opened"
 
-    def _sell(self, pos, qty, price, now, reason):
+    def _sell(self, pos, qty, price, now, reason, detail=""):
         qty = min(qty, pos.qty)
         cash = qty * price * (1 - self.risk.fee_rate)
         self.cash += cash
         pos.qty -= qty
         pos.proceeds += cash
-        pos.exits.append({"time": _iso(now), "qty": qty, "price": price, "reason": reason})
+        pos.exits.append({"time": _iso(now), "qty": qty, "price": price, "reason": reason, "detail": detail})
         if pos.qty <= pos.initial_qty * 1e-9:
             self._close(pos, now, reason)
 
@@ -196,14 +200,17 @@ class Portfolio:
             "entry_price": pos.entry_price, "avg_exit_price": exit_value, "qty": pos.initial_qty,
             "pnl": pnl, "return_pct": pnl / pos.cost * 100, "r": pnl / (pos.risk_per_unit * pos.initial_qty),
             "bars": pos.bars, "exit_reason": reason, "entry_reason": pos.entry_reason,
+            "exit_detail": " Then: ".join(x["detail"] for x in pos.exits if x.get("detail")),
+            "entry_signals": pos.entry_signals, "initial_stop": pos.initial_stop, "target": pos.target,
+            "max_r": pos.max_r, "cost": pos.cost,
         })
         if pnl < 0:
             self.cooldown[pos.product_id] = self.risk.cooldown_bars
 
-    def exit_all(self, product_id, price, now, reason):
+    def exit_all(self, product_id, price, now, reason, detail=""):
         pos = self.positions.get(product_id)
         if pos:
-            self._sell(pos, pos.qty, price * (1 - self.risk.slippage), now, reason)
+            self._sell(pos, pos.qty, price * (1 - self.risk.slippage), now, reason, detail)
 
     def on_bar(self, product_id, now, o, h, l, c, atr_value=None, signal_exit=False):
         """Advance an open position by one base bar. Returns the exit reason if it closed."""
@@ -218,19 +225,36 @@ class Portfolio:
         if l <= pos.stop:
             kind = "trailing stop" if pos.stop > pos.initial_stop and pos.stop > pos.entry_price else (
                 "breakeven stop" if pos.stop > pos.initial_stop else "stop loss")
-            self._sell(pos, pos.qty, min(o, pos.stop) * (1 - slip), now, kind)
+            fill = min(o, pos.stop)
+            why = {
+                "stop loss": f"Price fell to {l:.6g}, reaching the stop at {pos.stop:.6g} "
+                             f"({e.stop_atr:g}x ATR below the {pos.entry_price:.6g} entry). The setup failed, "
+                             f"so the position was closed to keep the loss to the planned 1R.",
+                "breakeven stop": f"The trade had been in profit (up to {pos.max_r:+.2f}R), so the stop was raised to "
+                                  f"breakeven at {pos.stop:.6g}. Price came back to it and the rest was sold without a loss.",
+                "trailing stop": f"The trailing stop had followed the high of {pos.highest:.6g} up to {pos.stop:.6g}. "
+                                 f"Price pulled back to it, locking in the gain after a best of {pos.max_r:+.2f}R.",
+            }[kind]
+            if o < pos.stop:
+                why += f" The candle opened at {o:.6g}, below the stop, so the fill was at the open."
+            self._sell(pos, pos.qty, fill * (1 - slip), now, kind, why)
             return kind
         # 2. fixed target
         if e.fixed_tp_r:
             target = pos.entry_price + e.fixed_tp_r * pos.risk_per_unit
             if h >= target:
-                self._sell(pos, pos.qty, max(o, target), now, f"take profit {e.fixed_tp_r:g}R")
+                self._sell(pos, pos.qty, max(o, target), now, f"take profit {e.fixed_tp_r:g}R",
+                           f"Price reached {h:.6g}, above the {e.fixed_tp_r:g}R target of {target:.6g} "
+                           f"({e.fixed_tp_r:g}x the {pos.risk_per_unit:.6g} risked per unit). The whole position was "
+                           f"sold at the target to bank a {e.fixed_tp_r:g}:1 reward-to-risk win.")
                 return f"take profit {e.fixed_tp_r:g}R"
         # 3. partial target
         if e.tp1_r and not pos.tp1_done:
             target = pos.entry_price + e.tp1_r * pos.risk_per_unit
             if h >= target:
-                self._sell(pos, pos.initial_qty * e.tp1_fraction, max(o, target), now, f"partial take profit {e.tp1_r:g}R")
+                self._sell(pos, pos.initial_qty * e.tp1_fraction, max(o, target), now, f"partial take profit {e.tp1_r:g}R",
+                           f"Price reached the {e.tp1_r:g}R target of {target:.6g}; {e.tp1_fraction:.0%} of the position "
+                           f"was sold there to lock in profit.")
                 pos.tp1_done = True
                 if e.breakeven_after_tp1:
                     pos.stop = max(pos.stop, pos.entry_price * (1 + 2 * self.risk.fee_rate))
@@ -245,11 +269,15 @@ class Portfolio:
             pos.stop = max(pos.stop, pos.highest - e.trail_atr * (atr_value or pos.atr))
         # 5. signal exit
         if e.signal_exit and signal_exit:
-            self._sell(pos, pos.qty, c * (1 - slip), now, "EMA bearish cross")
+            self._sell(pos, pos.qty, c * (1 - slip), now, "EMA bearish cross",
+                       f"The fast EMA crossed below the medium EMA on the signal chart, so the uptrend that justified "
+                       f"the entry had turned. Sold at the close of {c:.6g}.")
             return "EMA bearish cross"
         # 6. time stop
         if e.time_stop_bars and pos.bars >= e.time_stop_bars and pos.max_r < e.time_stop_min_r:
-            self._sell(pos, pos.qty, c * (1 - slip), now, "time stop")
+            self._sell(pos, pos.qty, c * (1 - slip), now, "time stop",
+                       f"After {pos.bars} five-minute candles the trade had only reached {pos.max_r:+.2f}R "
+                       f"(needed {e.time_stop_min_r:+g}R). A stalled trade ties up capital, so it was closed at {c:.6g}.")
             return "time stop"
         return None
 

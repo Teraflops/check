@@ -154,3 +154,16 @@ def test_breakeven_at_r_without_partial_sale():
     bar(p, "X-USD", 101, 103.2, 100.5, 103)                  # reached 1.6R
     assert pos.qty == pos.initial_qty and pos.stop == pytest.approx(100.0)
     assert bar(p, "X-USD", 102, 102, 99.9, 100, n=2) == "breakeven stop"
+
+
+def test_exits_record_a_plain_english_explanation():
+    p = pf(ExitConfig(signal_exit=False, tp1_r=0, trail_atr=0, fixed_tp_r=3.0))
+    pos, _ = p.open("X-USD", T0, 100.0, 1.0, signals=[{"name": "EMA stack", "category": "trend", "reason": "r"}])
+    assert pos.target == pytest.approx(106.0)
+    bar(p, "X-USD", 101, 106.5, 100.5, 106)
+    t = p.trades[-1]
+    assert "3R target" in t["exit_detail"] and t["entry_signals"][0]["name"] == "EMA stack"
+
+    p.open("Y-USD", T0, 100.0, 1.0)
+    bar(p, "Y-USD", 99, 99, 97.9, 98)
+    assert "stop" in p.trades[-1]["exit_detail"] and "1R" in p.trades[-1]["exit_detail"]

@@ -21,8 +21,9 @@ agent can run unattended without a Claude session. No API key needed.
 | `engine.py` | Paper portfolio: entry filter, position sizing, exit logic, kill switches. Shared by the agent and the backtester |
 | `agent.py` | The autonomous loop (every 5 min) |
 | `backtest.py` | Replays past Coinbase candles through the same engine and compares exit strategies |
+| `dashboard.py` | Renders the agent's state, decisions and reasoning as an HTML dashboard |
 | `coinbase_data.py` | Coinbase public market-data client (candles, products, prices) |
-| `tests/` | 42 unit tests: every signal rule fires and doesn't fire on synthetic data; every exit rule |
+| `tests/` | 43 unit tests: every signal rule fires and doesn't fire on synthetic data; every exit rule |
 
 ## Quick start
 
@@ -47,6 +48,27 @@ State is saved to `state.json` after every cycle. Stop and restart at any time.
 On restart it replays any 5m candles it missed, so a stop that was hit while it
 was down still gets applied. Delete `state.json`, `trades.csv` and `equity.csv`
 to start a fresh paper account.
+
+## Dashboard
+
+```bash
+python3 dashboard.py --out dashboard.html   # render from state.json + equity.csv
+```
+
+A self-contained HTML page with the account summary, the equity curve, and every
+open position on a stop → entry → target scale. Each position shows **why it was
+bought** (each detector signal that fired, with its numbers) and its **exit plan**.
+Each closed trade shows **why it was sold** in plain English (for example "Price
+fell to X, reaching the stop at Y (2x ATR below the Z entry)…"). It also has the
+latest scan of every watched coin, with its score, which categories fired and why
+it was passed or bought, plus a decision log of entries, exits and skipped setups.
+
+The page embeds the full agent state, so a fresh machine can pick up the same
+paper account:
+
+```bash
+python3 dashboard.py --restore dashboard.html   # recreates state.json and equity.csv
+```
 
 ## What each 5-minute cycle does
 

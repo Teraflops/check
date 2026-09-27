@@ -64,6 +64,8 @@ class Agent:
         self.pf = Portfolio(risk, exit_profile(args.exit, args.timeframe), EntryConfig(), self.params)
         self.universe, self.universe_at = [], 0.0
         self.last_signal = {}         # product -> last evaluated signal candle (iso)
+        self.last_scan = {}           # product -> latest detector verdict, for the dashboard
+        self.events = []              # entries, exits and notable skips, newest last
         self.logged_trades = 0
         self.load()
 
@@ -74,6 +76,8 @@ class Agent:
                 d = json.load(f)
             self.pf.load(d["portfolio"])
             self.last_signal = d.get("last_signal", {})
+            self.last_scan = d.get("last_scan", {})
+            self.events = d.get("events", [])
             self.logged_trades = len(self.pf.trades)
             log.info("Resumed: equity $%.2f, %d open, %d closed trades",
                      self.pf.equity(), len(self.pf.positions), len(self.pf.trades))
@@ -84,6 +88,10 @@ class Agent:
         tmp = self.args.state + ".tmp"
         with open(tmp, "w") as f:
             json.dump({"portfolio": self.pf.to_dict(), "last_signal": self.last_signal,
+                       "last_scan": self.last_scan, "events": self.events[-300:],
+                       "risk": vars(self.pf.risk), "exit_cfg": vars(self.pf.exit_cfg),
+                       "entry_cfg": vars(self.pf.entry_cfg), "universe": self.universe,
+                       "updated": now.isoformat(),
                        "config": {"timeframe": self.args.timeframe, "exit": self.args.exit}}, f, indent=1)
         os.replace(tmp, self.args.state)
         new = self.pf.trades[self.logged_trades:]
@@ -93,6 +101,10 @@ class Agent:
         _append_csv(self.args.equity_log, [{
             "time": now.isoformat(), "equity": round(self.pf.equity(), 4), "cash": round(self.pf.cash, 4),
             "open_positions": len(self.pf.positions), "halted": self.pf.halted}])
+
+    def event(self, now, kind, pid, message, **extra):
+        self.events.append({"time": pd.Timestamp(now).isoformat(), "kind": kind, "product_id": pid,
+                            "message": message, **extra})
 
     # ------------------------------------------------------------ cycle
     def signal_frame(self, pid):
@@ -125,16 +137,23 @@ class Agent:
                 tr = self.pf.trades[-1]
                 log.info("EXIT  %-10s %s @ %.6g  P&L $%+.2f (%+.2f%%, %+.2fR)", pid, reason,
                          tr["avg_exit_price"], tr["pnl"], tr["return_pct"], tr["r"])
+                self.event(t, "exit", pid, tr["exit_detail"], reason=reason, pnl=tr["pnl"],
+                           return_pct=tr["return_pct"], r=tr["r"], price=tr["avg_exit_price"])
                 return
             pos.last_bar = t.isoformat()
             if pos.tp1_done and not had_tp1:
+                self.event(t, "partial", pid, pos.exits[-1].get("detail", ""), price=pos.exits[-1]["price"])
                 log.info("TP1   %-10s sold %.0f%% @ target, stop -> breakeven %.6g",
                          pid, self.pf.exit_cfg.tp1_fraction * 100, pos.stop)
 
     def scan_entries(self, now):
         candidates = []
         for pid in self.universe:
-            if not self.pf.can_open(pid)[0]:
+            can, why_not = self.pf.can_open(pid)
+            if not can:
+                if pid in self.last_scan:
+                    self.last_scan[pid]["decision"] = "holding" if pid in self.pf.positions else "blocked"
+                    self.last_scan[pid]["reason"] = why_not
                 continue
             ind, col = self.signal_frame(pid)
             if ind is None:
@@ -145,14 +164,32 @@ class Agent:
             self.last_signal[pid] = sig_time
             report = evaluate(col, None, self.args.timeframe, self.params)
             ok, reason = entry_decision(report, self.pf.entry_cfg, col["close"][-1], col["atr"][-1])
+            self.last_scan[pid] = {
+                "candle": sig_time, "evaluated": pd.Timestamp(now).isoformat(), "close": float(col["close"][-1]),
+                "score": report.score, "independent": report.independent_confirmations,
+                "categories": report.by_category, "strong": report.strong_setup,
+                "fired": [{"name": x.name, "category": x.category, "reason": x.reason} for x in report.fired],
+                "decision": "buy" if ok else "pass", "reason": reason,
+            }
             if ok:
                 candidates.append((report.score, pid, col["atr"][-1], reason, report))
         for score, pid, atr_v, reason, report in sorted(candidates, key=lambda x: -x[0]):
             price = cd.last_price(pid)
             if not price:
                 continue
-            pos, why = self.pf.open(pid, now, price, atr_v, reason)
+            fired = [{"name": x.name, "category": x.category, "reason": x.reason} for x in report.fired]
+            pos, why = self.pf.open(pid, now, price, atr_v, reason, signals=fired)
             if pos:
+                cats = report.by_category
+                self.event(now, "entry", pid,
+                           f"Strong setup on the {self.args.timeframe} chart: {report.score} signals from "
+                           f"{report.independent_confirmations} independent groups (trend {cats['trend']}, momentum "
+                           f"{cats['momentum']}, volume {cats['volume']}, volatility {cats['volatility']}), with price "
+                           f"above a rising 200-candle average. Bought ${pos.cost:.2f} at {pos.entry_price:.6g}; "
+                           f"stop {pos.stop:.6g} ({self.pf.exit_cfg.stop_atr:g}x ATR, -{(1 - pos.stop / pos.entry_price) * 100:.2f}%)"
+                           + (f", target {pos.target:.6g} (+{(pos.target / pos.entry_price - 1) * 100:.2f}%)" if pos.target else "")
+                           + f". Risk if stopped: ${(pos.entry_price - pos.stop) * pos.qty:.2f}.",
+                           signals=fired, price=pos.entry_price)
                 # replay the candle we entered in too, so a fast drop right after entry hits the stop
                 pos.last_bar = (pd.Timestamp(now).floor("5min") - pd.Timedelta(minutes=5)).isoformat()
                 log.info("ENTRY %-10s @ %.6g  qty %.6g ($%.2f)  stop %.6g (-%.2f%%)  %s", pid, pos.entry_price,
@@ -160,6 +197,9 @@ class Agent:
                          (1 - pos.stop / pos.entry_price) * 100, reason)
             else:
                 log.info("skip  %-10s %s", pid, why)
+                self.last_scan[pid]["decision"] = "blocked"
+                self.last_scan[pid]["reason"] = f"strong setup, but {why}"
+                self.event(now, "skip", pid, f"Strong setup (score {score}) but not bought: {why}.")
 
     def cycle(self):
         now = datetime.now(timezone.utc)
