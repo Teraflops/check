@@ -1,0 +1,10 @@
+data_cache/
+__pycache__/
+.pytest_cache/
+state.json
+state.json.tmp
+trades.csv
+equity.csv
+agent.log
+backtest_results.csv
+dashboard.html
