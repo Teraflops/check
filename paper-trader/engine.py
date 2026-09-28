@@ -229,7 +229,8 @@ class Portfolio:
             why = {
                 "stop loss": f"Price fell to {l:.6g}, reaching the stop at {pos.stop:.6g} "
                              f"({e.stop_atr:g}x ATR below the {pos.entry_price:.6g} entry). The setup failed, "
-                             f"so the position was closed to keep the loss to the planned 1R.",
+                             f"so the position was closed at the planned risk level. Fees on the buy and "
+                             f"the sale add to the loss, more so when the stop is tight.",
                 "breakeven stop": f"The trade had been in profit (up to {pos.max_r:+.2f}R), so the stop was raised to "
                                   f"breakeven at {pos.stop:.6g}. Price came back to it and the rest was sold without a loss.",
                 "trailing stop": f"The trailing stop had followed the high of {pos.highest:.6g} up to {pos.stop:.6g}. "

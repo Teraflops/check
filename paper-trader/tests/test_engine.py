@@ -166,4 +166,4 @@ def test_exits_record_a_plain_english_explanation():
 
     p.open("Y-USD", T0, 100.0, 1.0)
     bar(p, "Y-USD", 99, 99, 97.9, 98)
-    assert "stop" in p.trades[-1]["exit_detail"] and "1R" in p.trades[-1]["exit_detail"]
+    assert "stop" in p.trades[-1]["exit_detail"] and "planned risk" in p.trades[-1]["exit_detail"]
